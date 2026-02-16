@@ -1,34 +1,35 @@
 import { Stream } from "node:stream";
 import { EVENTS } from "./constants.js";
-import { SAXParser } from "./parser.js";
+import { Parser } from "./parser.js";
 import type { SAXOptions } from "./types";
 
 const streamWraps = EVENTS.filter(
 	(event) => event !== "error" && event !== "end",
 );
 
-export class SAXStreamer extends Stream {
+export class Streamer extends Stream {
 	public readable: boolean = true;
 	public writeable: boolean = true;
 
-	private _decoder: TextDecoder | null = null;
-	private _parser: SAXParser;
+	private decoder: TextDecoder | null = null;
+	private parser: Parser;
 
-	constructor(isStrict: boolean = false, options: SAXOptions = {}) {
+	constructor(options: SAXOptions = {}) {
 		super();
 
 		this.readable = true;
 		this.writeable = true;
-		this._decoder = null;
+		this.decoder = null;
 
-		this._parser = new SAXParser(isStrict, options);
-		this._parser.onEnd = () => {
+		this.parser = new Parser(options);
+
+		this.parser.handlers.onEnd = () => {
 			this.emit("end");
 		};
 
-		this._parser.onError = (error) => {
+		this.parser.handlers.onError = (error) => {
 			this.emit("error", error);
-			this._parser.error = null;
+			this.parser.error = null;
 		};
 
 		for (const event of streamWraps) {
@@ -55,10 +56,10 @@ export class SAXStreamer extends Stream {
 			this.write(chunk);
 		}
 
-		if (this._decoder) {
-			const remaining = this._decoder.decode();
+		if (this.decoder) {
+			const remaining = this.decoder.decode();
 			if (remaining) {
-				this._parser.write(remaining);
+				this.parser.write(remaining);
 				this.emit("data", remaining);
 			}
 		}
@@ -70,8 +71,8 @@ export class SAXStreamer extends Stream {
 	public override on(event: string, handler: (...args: any[]) => void): this {
 		const key = `on${event}`;
 
-		if (!this._parser[key] && streamWraps.includes(event)) {
-			this._parser[key] = (...args: any[]) => {
+		if (!this.parser[key] && streamWraps.includes(event)) {
+			this.parser[key] = (...args: any[]) => {
 				this.emit(event, ...args);
 			};
 		}
@@ -79,21 +80,21 @@ export class SAXStreamer extends Stream {
 		return super.on(event, handler);
 	}
 
-	public write(data): boolean {
+	public write(chunk: Buffer | string): boolean {
 		if (
 			typeof Buffer === "function" &&
 			typeof Buffer.isBuffer === "function" &&
-			Buffer.isBuffer(data)
+			Buffer.isBuffer(chunk)
 		) {
-			if (!this._decoder) {
-				this._decoder = new TextDecoder("utf8");
+			if (!this.decoder) {
+				this.decoder = new TextDecoder("utf8");
 			}
 
-			data = this._decoder.decode(data, { stream: true });
+			chunk = this.decoder.decode(chunk, { stream: true });
 		}
 
-		this._parser.write(data.toString());
-		this.emit("data", data);
+		this.parser.write(chunk.toString());
+		this.emit("data", chunk);
 		return true;
 	}
 }

@@ -12,7 +12,6 @@ export class SAXParserError extends Error {
 	}
 
 	override toString(): string {
-		let result = `${this.name}: ${this.message}`;
-		return result;
+		return `${this.name}: ${this.message} (line ${this.line}, column ${this.column})`;
 	}
 }

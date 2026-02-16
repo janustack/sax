@@ -1,3 +1,5 @@
+import { it } from "bun:test";
+
 require(__dirname).test({
 	xml: "<root length='12345'></root>",
 	expect: [

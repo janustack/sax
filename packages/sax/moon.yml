@@ -5,14 +5,21 @@ language: typescript
 layer: library
 
 project:
-  name: sax
-  description: Simple API for XML in JavaScript
+    name: sax
+    description: Simple API for XML in JavaScript
 
 tasks:
-  build:
-    command: bun run build.ts
-    inputs:
-      - src/**/*
-      - build.ts
-    outputs:
-      - dist/**/*
+    build:
+        command: bun build.ts
+        deps:
+            - clean
+        inputs:
+            - src/**/*
+            - build.ts
+        outputs:
+            - dist/**/*
+
+    clean:
+        command: rm -rf dist
+        inputs:
+            - dist/**/*

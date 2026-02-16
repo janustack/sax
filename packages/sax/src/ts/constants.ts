@@ -1,32 +1,93 @@
 export const CDATA_SECTION_OPEN = "[CDATA[";
 export const DOCTYPE_KEYWORD = "DOCTYPE";
+export const MAX_BUFFER_LENGTH = 64 * 1024;
 
 export const NAMESPACES = {
-	XML: "http://www.w3.org/XML/1998/namespace",
-	XMLNS: "http://www.w3.org/2000/xmlns/",
+	xml: "http://www.w3.org/XML/1998/namespace",
+	xmlns: "http://www.w3.org/2000/xmlns/",
 } as const;
 
 export const BUFFERS = [
-	"comment",
-	"sgmlDeclaration",
-	"textNode",
-	"tagName",
-	"doctype",
-	"procInstName",
-	"procInstBody",
-	"entity",
-	"attribName",
-	"attribValue",
+	"attributeName",
+	"attributeValue",
 	"cdata",
-	"script",
+	"comment",
+	"doctype",
+	"entity",
+	"piBody",
+	"piName",
+	"sgmlDeclaration",
+	"tagName",
+	"textNode",
 ] as const;
 
-export const ENTITIES = {
+export const EVENTS = [
+	"attribute",
+	"cdata",
+	"closeCdata",
+	"closeNamespace",
+	"closeTag",
+	"comment",
+	"doctype",
+	"end",
+	"error",
+	"openCdata",
+	"openNamespace",
+	"openTag",
+	"openTagStart",
+	"processingInstruction",
+	"ready",
+	"sgmlDeclaration",
+	"text",
+] as const;
+
+export enum State {
+	ATTRIBUTE, // <a
+	ATTRIBUTE_NAME, // <a foo
+	ATTRIBUTE_NAME_SAW_WHITE, // <a foo _
+	ATTRIBUTE_VALUE, // <a foo=
+	ATTRIBUTE_VALUE_CLOSED, // <a foo="bar"
+	ATTRIBUTE_VALUE_QUOTED, // <a foo="bar
+	ATTRIBUTE_VALUE_UNQUOTED, // <a foo=bar
+	BEGIN, // leading byte order mark or whitespace
+	BEGIN_WHITESPACE, // leading whitespace
+	CDATA, // <![CDATA[ something
+	CLOSE_TAG, // </a
+	CLOSE_TAG_SAW_WHITE, // </a   >
+	COMMENT, // <!--
+	COMMENT_ENDED, // <!-- blah --
+	COMMENT_ENDING, // <!-- blah -
+	COMMENT_STARTING, // <!-
+	DOCTYPE, // <!DOCTYPE
+	DOCTYPE_DTD, // <!DOCTYPE "//blah" [ ...
+	DOCTYPE_DTD_QUOTED, // <!DOCTYPE "//blah" [ "foo
+	DOCTYPE_QUOTED, // <!DOCTYPE "//blah
+	OPEN_TAG, // <strong
+	OPEN_TAG_SLASH, // <strong /
+	PROCESSING_INSTRUCTION, // <?hi
+	PROCESSING_INSTRUCTION_BODY, // <?hi there
+	PROCESSING_INSTRUCTION_ENDING, // <?hi "there" ?
+	TEXT, // general stuff
+	TEXT_ENTITY, // &amp and such.
+	OPEN_WAKA,
+	SGML_DECLARATION,
+	SGML_DECLARATION_QUOTED,
+	CDATA_ENDING,
+	CDATA_ENDING_2,
+	ATTRIBUTE_VALUE_ENTITY_UNQUOTED,
+	ATTRIBUTE_VALUE_ENTITY_QUOTED,
+}
+
+export const XML_PREDEFINED_ENTITIES = {
 	amp: "&",
+	apos: "'",
 	gt: ">",
 	lt: "<",
 	quot: '"',
-	apos: "'",
+} as const;
+
+export const HTML_NAMED_CHARACTER_ENTITIES = {
+	...XML_PREDEFINED_ENTITIES,
 	AElig: 198,
 	Aacute: 193,
 	Acirc: 194,
@@ -275,82 +336,15 @@ export const ENTITIES = {
 	clubs: 9827,
 	hearts: 9829,
 	diams: 9830,
-};
+} as const;
 
-export const EVENTS: string[] = [
-	"text",
-	"processinginstruction",
-	"sgmldeclaration",
-	"doctype",
-	"comment",
-	"opentagstart",
-	"attribute",
-	"opentag",
-	"closetag",
-	"opencdata",
-	"cdata",
-	"closecdata",
-	"error",
-	"end",
-	"ready",
-	"script",
-	"opennamespace",
-	"closenamespace",
-];
-
-export enum State {
-	ATTRIB, // <a
-	ATTRIB_NAME, // <a foo
-	ATTRIB_NAME_SAW_WHITE, // <a foo _
-	ATTRIB_VALUE, // <a foo=
-	ATTRIB_VALUE_CLOSED, // <a foo="bar"
-	ATTRIB_VALUE_ENTITY_Q, // <foo bar="&quot;"
-	ATTRIB_VALUE_ENTITY_U, // <foo bar=&quot
-	ATTRIB_VALUE_QUOTED, // <a foo="bar
-	ATTRIB_VALUE_UNQUOTED, // <a foo=bar
-
-	BEGIN, // leading byte order mark or whitespace
-	BEGIN_WHITESPACE, // leading whitespace
-
-	CDATA, // <![CDATA[ something
-	CDATA_ENDING, // ]
-	CDATA_ENDING_2, // ]]
-
-	CLOSE_TAG, // </a
-	CLOSE_TAG_SAW_WHITE, // </a   >
-
-	COMMENT, // <!--
-	COMMENT_ENDED, // <!-- blah --
-	COMMENT_ENDING, // <!-- blah -
-	COMMENT_STARTING, // <!-
-
-	DOCTYPE, // <!DOCTYPE
-	DOCTYPE_DTD, // <!DOCTYPE "//blah" [ ...
-	DOCTYPE_DTD_QUOTED, // <!DOCTYPE "//blah" [ "foo
-	DOCTYPE_QUOTED, // <!DOCTYPE "//blah
-
-	OPEN_TAG, // <strong
-	OPEN_TAG_SLASH, // <strong /
-	OPEN_WAKA, // <
-
-	PROC_INST, // <?hi
-	PROC_INST_BODY, // <?hi there
-	PROC_INST_ENDING, // <?hi "there" ?
-
-	SCRIPT, // <script> ...
-	SCRIPT_ENDING, // <script> ... <
-
-	SGML_DECLARATION, // <!BLARG
-	SGML_DECL_QUOTED, // <!BLARG foo "bar
-
-	TEXT, // general stuff
-	TEXT_ENTITY, // &amp and such.
-}
-
-export const PREDEFINED_INTERNAL_ENTITIES = {
-	amp: "&",
-	apos: "'",
-	gt: ">",
-	lt: "<",
-	quot: '"',
+export const REGEX = {
+	ENTITY_BODY:
+		/[#:_A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD\u00B7\u0300-\u036F\u203F-\u2040.\d-]/,
+	ENTITY_START:
+		/[#:_A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD]/,
+	NAME_BODY:
+		/[:_A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD\u00B7\u0300-\u036F\u203F-\u2040.\d-]/,
+	NAME_START:
+		/[:_A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD]/,
 } as const;

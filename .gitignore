@@ -1,3 +1,5 @@
 .moon/cache/
+.zig-cache/
+.zig-out/
 dist/
 node_modules/
