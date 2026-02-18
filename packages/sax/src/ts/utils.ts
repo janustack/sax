@@ -1,5 +1,17 @@
 import type { SAXOptions } from "./types.js";
 
+export function isWhitespace(char: string): boolean {
+	return char === " " || char === "\n" || char === "\r" || char === "\t";
+}
+
+export function isQuote(char: string): boolean {
+	return char === '"' || char === "'";
+}
+
+export function isAttributeEnd(char: string): boolean {
+	return char === ">" || isWhitespace(char);
+}
+
 export function isMatch(regex: RegExp, char: string): boolean {
 	return regex.test(char);
 }
@@ -10,7 +22,7 @@ export function applyTextOptions(options: SAXOptions, text: string): string {
 	return text;
 }
 
-export function getQName(name: string, isAttribute: boolean = false) {
+export function getQName(name: string, isAttribute = false) {
 	const i = name.indexOf(":");
 	const qName = i < 0 ? ["", name] : name.split(":");
 

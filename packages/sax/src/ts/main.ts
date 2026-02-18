@@ -5,8 +5,14 @@ export {
 	XML_PREDEFINED_ENTITIES,
 } from "./constants.js";
 
-export { Parser } from "./parser.js";
+import { Parser } from "./parser.js";
 
-// export { Streamer } from "./streamer.js";
+export const wasmURL: URL = new URL("./utils.wasm", import.meta.url);
 
 export type { SAXHandlers, SAXOptions } from "./types.js";
+
+const SAX = {
+	Parser,
+};
+
+export default SAX;

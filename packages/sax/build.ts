@@ -9,7 +9,7 @@ const result = await Bun.build({
 	metafile: "meta.json",
 	plugins: [dts()],
 	target: "browser",
-	footer: "Built with love by ACY in Florida",
+	footer: "// Built with love by ACY in Florida",
 	minify: true,
 	outdir: "dist",
 	root: "src/ts",

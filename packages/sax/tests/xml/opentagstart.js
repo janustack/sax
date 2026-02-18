@@ -15,7 +15,7 @@ require(__dirname).test({
 				name: "length",
 				value: "12345",
 				prefix: "",
-				local: "length",
+				localName: "length",
 				uri: "",
 			},
 		],
@@ -24,14 +24,14 @@ require(__dirname).test({
 			{
 				name: "root",
 				prefix: "",
-				local: "root",
+				localName: "root",
 				uri: "",
 				attributes: {
 					length: {
 						name: "length",
 						value: "12345",
 						prefix: "",
-						local: "length",
+						localName: "length",
 						uri: "",
 					},
 				},

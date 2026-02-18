@@ -1,25 +1,27 @@
-# https://moonrepo.dev/docs/config/project
 $schema: ../../.moon/cache/schemas/project.json
 
 language: typescript
 layer: library
 
 project:
-    name: sax
-    description: Simple API for XML in JavaScript
+  name: sax
+  description: Simple API for XML in JavaScript
 
 tasks:
-    build:
-        command: bun build.ts
-        deps:
-            - clean
-        inputs:
-            - src/**/*
-            - build.ts
-        outputs:
-            - dist/**/*
+  bench:
+    command: bun
 
-    clean:
-        command: rm -rf dist
-        inputs:
-            - dist/**/*
+  build:
+    command: bun build.ts
+    deps:
+      - clean
+    inputs:
+      - src/**/*
+      - build.ts
+    outputs:
+      - dist/**/*
+
+  clean:
+    command: rm -rf dist
+    inputs:
+      - dist/**/*

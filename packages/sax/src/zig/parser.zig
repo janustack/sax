@@ -22,7 +22,7 @@ pub const Parser = struct {
     }
 
     fn processAttribute(this: *@This()) !void {
-
+        if (!this.options.strict) {
     }
 
     fn beginWhitespace(this: *@This()) !void {

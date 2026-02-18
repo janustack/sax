@@ -66,7 +66,7 @@ const TagEntry = struct {
 
 pub fn Parser(comptime Context: type) type {
     return struct {
-        const Self = @This();
+        const this = @This();
         const H = types.Handlers(Context);
 
         allocator: std.mem.Allocator,
@@ -120,8 +120,8 @@ pub fn Parser(comptime Context: type) type {
 
         // ─── init / deinit ────────────────────────────────────────────────────
 
-        pub fn init(allocator: std.mem.Allocator, options: types.Options, handlers: H) !Self {
-            var self = Self{
+        pub fn init(allocator: std.mem.Allocator, options: types.Options, handlers: H) !this {
+            var this = this{
                 .allocator = allocator,
                 .options = options,
                 .handlers = handlers,
@@ -147,82 +147,82 @@ pub fn Parser(comptime Context: type) type {
             };
 
             // Unquoted attribute values: default to true in non-strict mode.
-            if (self.options.unquoted_attribute_values == null) {
-                self.options.unquoted_attribute_values = !self.options.strict;
+            if (this.options.unquoted_attribute_values == null) {
+                this.options.unquoted_attribute_values = !this.options.strict;
             }
             // `lowercase_tags` is an alias for `lowercase`.
-            if (self.options.lowercase_tags) self.options.lowercase = true;
+            if (this.options.lowercase_tags) this.options.lowercase = true;
             // `no_script` is implied by strict mode.
-            if (self.options.strict) self.options.no_script = true;
+            if (this.options.strict) this.options.no_script = true;
 
-            if (self.options.xmlns) {
-                try self.initRootNs();
+            if (this.options.xmlns) {
+                try this.initRootNs();
             }
 
-            self.emit(.ready, {});
-            return self;
+            this.emit(.ready, {});
+            return this;
         }
 
-        pub fn deinit(self: *Self) void {
-            self.attribute_name.deinit();
-            self.attribute_value.deinit();
-            self.cdata.deinit();
-            self.comment.deinit();
-            switch (self.doctype) {
+        pub fn deinit(this: *@This()) void {
+            this.attribute_name.deinit();
+            this.attribute_value.deinit();
+            this.cdata.deinit();
+            this.comment.deinit();
+            switch (this.doctype) {
                 .building => |*b| b.deinit(),
                 else => {},
             }
-            self.entity.deinit();
-            self.proc_inst_body.deinit();
-            self.proc_inst_name.deinit();
-            self.script.deinit();
-            self.sgml_declaration.deinit();
-            self.tag_name.deinit();
-            self.text_node.deinit();
-            for (self.tags.items) |*entry| {
+            this.entity.deinit();
+            this.proc_inst_body.deinit();
+            this.proc_inst_name.deinit();
+            this.script.deinit();
+            this.sgml_declaration.deinit();
+            this.tag_name.deinit();
+            this.text_node.deinit();
+            for (this.tags.items) |*entry| {
                 entry.tag.deinit();
             }
-            self.tags.deinit();
-            if (self.current_tag) |*tag| tag.deinit();
-            for (self.attribute_list.items) |item| {
-                self.allocator.free(item.name);
-                self.allocator.free(item.value);
+            this.tags.deinit();
+            if (this.current_tag) |*tag| tag.deinit();
+            for (this.attribute_list.items) |item| {
+                this.allocator.free(item.name);
+                this.allocator.free(item.value);
             }
-            self.attribute_list.deinit();
-            for (self.ns_pool.items) |*ns| ns.deinit();
-            self.ns_pool.deinit();
+            this.attribute_list.deinit();
+            for (this.ns_pool.items) |*ns| ns.deinit();
+            this.ns_pool.deinit();
         }
 
         // ─── namespace helpers ────────────────────────────────────────────────
 
-        fn initRootNs(self: *Self) !void {
-            var root = types.NamespaceMap.init(self.allocator, null);
+        fn initRootNs(this: *@This()) !void {
+            var root = types.NamespaceMap.init(this.allocator, null);
             try root.put("xml", constants.NAMESPACE_XML);
             try root.put("xmlns", constants.NAMESPACE_XMLNS);
-            try self.ns_pool.append(root);
-            self.root_ns = &self.ns_pool.items[self.ns_pool.items.len - 1];
+            try this.ns_pool.append(root);
+            this.root_ns = &this.ns_pool.items[this.ns_pool.items.len - 1];
         }
 
-        fn currentNs(self: *Self) ?*types.NamespaceMap {
-            if (!self.options.xmlns) return null;
-            if (self.tags.items.len > 0) {
-                return self.tags.items[self.tags.items.len - 1].ns;
+        fn currentNs(this: *@This()) ?*types.NamespaceMap {
+            if (!this.options.xmlns) return null;
+            if (this.tags.items.len > 0) {
+                return this.tags.items[this.tags.items.len - 1].ns;
             }
-            return self.root_ns;
+            return this.root_ns;
         }
 
         /// Allocate a fresh NamespaceMap that inherits from `parent`.
-        fn newNs(self: *Self, parent: ?*types.NamespaceMap) !*types.NamespaceMap {
-            const ns = types.NamespaceMap.init(self.allocator, parent);
-            try self.ns_pool.append(ns);
-            return &self.ns_pool.items[self.ns_pool.items.len - 1];
+        fn newNs(this: *@This(), parent: ?*types.NamespaceMap) !*types.NamespaceMap {
+            const ns = types.NamespaceMap.init(this.allocator, parent);
+            try this.ns_pool.append(ns);
+            return &this.ns_pool.items[this.ns_pool.items.len - 1];
         }
 
         // ─── public API ───────────────────────────────────────────────────────
 
-        pub fn write(self: *Self, chunk: []const u8) !void {
-            if (self.is_closed) {
-                self.softFail("Cannot write after close.");
+        pub fn write(this: *@This(), chunk: []const u8) !void {
+            if (this.is_closed) {
+                this.softFail("Cannot write after close.");
                 return;
             }
 
@@ -230,7 +230,7 @@ pub fn Parser(comptime Context: type) type {
             while (i < chunk.len) {
                 // Decode one UTF-8 codepoint.
                 const decoded = unicode.decodeUtf8Codepoint(chunk[i..]) orelse {
-                    self.softFail("Invalid UTF-8 sequence");
+                    this.softFail("Invalid UTF-8 sequence");
                     i += 1;
                     continue;
                 };
@@ -241,43 +241,43 @@ pub fn Parser(comptime Context: type) type {
                 // the many ASCII comparisons; for multi-byte we use the codepoint.
                 const byte: u8 = if (cp < 0x80) @intCast(cp) else 0;
 
-                if (self.options.position) {
-                    self.position += cp_len;
+                if (this.options.position) {
+                    this.position += cp_len;
                     if (byte == '\n') {
-                        self.line_number += 1;
-                        self.column_number = 0;
+                        this.line_number += 1;
+                        this.column_number = 0;
                     } else {
-                        self.column_number += 1;
+                        this.column_number += 1;
                     }
                 }
 
-                try self.step(cp, byte, chunk, &i);
+                try this.step(cp, byte, chunk, &i);
                 i += cp_len;
             }
 
-            if (self.position >= self.buffer_check_position) {
-                try self.checkBufferLength();
+            if (this.position >= this.buffer_check_position) {
+                try this.checkBufferLength();
             }
         }
 
-        pub fn flush(self: *Self) !void {
-            try self.flushBuffers();
+        pub fn flush(this: *@This()) !void {
+            try this.flushBuffers();
         }
 
-        pub fn close(self: *Self) !void {
-            try self.end();
+        pub fn close(this: *@This()) !void {
+            try this.end();
         }
 
-        pub fn end(self: *Self) !void {
-            if (self.has_seen_root and !self.closed_root) {
-                self.strictFail("Unclosed root tag");
+        pub fn end(this: *@This()) !void {
+            if (this.has_seen_root and !this.closed_root) {
+                this.strictFail("Unclosed root tag");
             }
-            if (self.state != .begin and self.state != .begin_whitespace and self.state != .text) {
-                self.softFail("Unexpected end");
+            if (this.state != .begin and this.state != .begin_whitespace and this.state != .text) {
+                this.softFail("Unexpected end");
             }
-            try self.closeText();
-            self.is_closed = true;
-            self.emit(.end, {});
+            try this.closeText();
+            this.is_closed = true;
+            this.emit(.end, {});
         }
 
         // ─── core step function ───────────────────────────────────────────────
@@ -286,104 +286,104 @@ pub fn Parser(comptime Context: type) type {
         /// `byte` is the raw byte when cp < 0x80, else 0.
         /// `chunk` and `i` are passed in case states need to advance the position manually.
         fn step(
-            self: *Self,
+            this: *@This(),
             cp: u21,
             byte: u8,
             chunk: []const u8,
             i: *usize,
         ) !void {
-            switch (self.state) {
+            switch (this.state) {
                 // ── BEGIN ──────────────────────────────────────────────────────
                 .begin => {
-                    self.state = .begin_whitespace;
+                    this.state = .begin_whitespace;
                     // Skip UTF-8 BOM (U+FEFF)
                     if (cp == 0xFEFF) return;
-                    try self.beginWhiteSpace(cp, byte);
+                    try this.beginWhiteSpace(cp, byte);
                 },
 
                 .begin_whitespace => {
-                    try self.beginWhiteSpace(cp, byte);
+                    try this.beginWhiteSpace(cp, byte);
                 },
 
                 // ── TEXT ───────────────────────────────────────────────────────
                 .text => {
                     if (byte == '<') {
-                        if (!(self.has_seen_root and self.closed_root and !self.options.strict)) {
-                            self.state = .open_waka;
-                            self.start_tag_position = self.position;
+                        if (!(this.has_seen_root and this.closed_root and !this.options.strict)) {
+                            this.state = .open_waka;
+                            this.start_tag_position = this.position;
                         }
                     } else if (byte == '&') {
-                        self.state = .text_entity;
+                        this.state = .text_entity;
                     } else {
-                        if (!isWhitespace(byte) and (!self.has_seen_root or self.closed_root)) {
-                            self.strictFail("Text data outside of root node.");
+                        if (!isWhitespace(byte) and (!this.has_seen_root or this.closed_root)) {
+                            this.strictFail("Text data outside of root node.");
                         }
-                        try self.appendCp(&self.text_node, cp);
+                        try this.appendCp(&this.text_node, cp);
                     }
                 },
 
                 // ── SCRIPT ────────────────────────────────────────────────────
                 .script => {
                     if (byte == '<') {
-                        self.state = .script_ending;
+                        this.state = .script_ending;
                     } else {
-                        try self.appendCp(&self.script, cp);
+                        try this.appendCp(&this.script, cp);
                     }
                 },
 
                 .script_ending => {
                     if (byte == '/') {
-                        self.state = .close_tag;
+                        this.state = .close_tag;
                     } else {
-                        try self.script.append('<');
-                        try self.appendCp(&self.script, cp);
-                        self.state = .script;
+                        try this.script.append('<');
+                        try this.appendCp(&this.script, cp);
+                        this.state = .script;
                     }
                 },
 
                 // ── OPEN_WAKA ─────────────────────────────────────────────────
                 .open_waka => {
                     if (byte == '!') {
-                        self.state = .sgml_declaration;
-                        self.sgml_declaration.clearRetainingCapacity();
+                        this.state = .sgml_declaration;
+                        this.sgml_declaration.clearRetainingCapacity();
                     } else if (isWhitespace(byte)) {
                         // wait for it…
                     } else if (unicode.isNameStart(cp)) {
-                        self.state = .open_tag;
-                        self.tag_name.clearRetainingCapacity();
-                        try self.appendCp(&self.tag_name, cp);
+                        this.state = .open_tag;
+                        this.tag_name.clearRetainingCapacity();
+                        try this.appendCp(&this.tag_name, cp);
                     } else if (byte == '/') {
-                        self.state = .close_tag;
-                        self.tag_name.clearRetainingCapacity();
+                        this.state = .close_tag;
+                        this.tag_name.clearRetainingCapacity();
                     } else if (byte == '?') {
-                        self.state = .processing_instruction;
-                        self.proc_inst_name.clearRetainingCapacity();
-                        self.proc_inst_body.clearRetainingCapacity();
+                        this.state = .processing_instruction;
+                        this.proc_inst_name.clearRetainingCapacity();
+                        this.proc_inst_body.clearRetainingCapacity();
                     } else {
-                        self.strictFail("Unencoded <");
+                        this.strictFail("Unencoded <");
                         // Reconstruct whitespace padding if the '<' was preceded by spaces.
-                        if (self.start_tag_position + 1 < self.position) {
-                            const pad = self.position - self.start_tag_position;
+                        if (this.start_tag_position + 1 < this.position) {
+                            const pad = this.position - this.start_tag_position;
                             var k: usize = 1;
                             while (k < pad) : (k += 1) {
-                                try self.text_node.append(' ');
+                                try this.text_node.append(' ');
                             }
                         }
-                        try self.text_node.append('<');
-                        try self.appendCp(&self.text_node, cp);
-                        self.state = .text;
+                        try this.text_node.append('<');
+                        try this.appendCp(&this.text_node, cp);
+                        this.state = .text;
                     }
                 },
 
                 // ── SGML_DECLARATION ─────────────────────────────────────────
                 .sgml_declaration => {
-                    const decl = self.sgml_declaration.items;
+                    const decl = this.sgml_declaration.items;
 
                     // "--" → start of comment
                     if (decl.len == 1 and decl[0] == '-' and byte == '-') {
-                        self.state = .comment;
-                        self.comment.clearRetainingCapacity();
-                        self.sgml_declaration.clearRetainingCapacity();
+                        this.state = .comment;
+                        this.comment.clearRetainingCapacity();
+                        this.sgml_declaration.clearRetainingCapacity();
                         return;
                     }
 
@@ -398,20 +398,20 @@ pub fn Parser(comptime Context: type) type {
                             if (std.mem.eql(u8, buf[0..combined_len], constants.DOCTYPE_KEYWORD[0..combined_len])) {
                                 if (combined_len == constants.DOCTYPE_KEYWORD.len) {
                                     // Full match!
-                                    self.state = .doctype;
-                                    const has_doctype = switch (self.doctype) {
+                                    this.state = .doctype;
+                                    const has_doctype = switch (this.doctype) {
                                         .none => false,
                                         .building, .seen => true,
                                     };
-                                    if (has_doctype or self.has_seen_root) {
-                                        self.strictFail("Inappropriately located doctype declaration");
+                                    if (has_doctype or this.has_seen_root) {
+                                        this.strictFail("Inappropriately located doctype declaration");
                                     }
-                                    self.doctype = .{ .building = std.ArrayList(u8).init(self.allocator) };
-                                    self.sgml_declaration.clearRetainingCapacity();
+                                    this.doctype = .{ .building = std.ArrayList(u8).init(this.allocator) };
+                                    this.sgml_declaration.clearRetainingCapacity();
                                     return;
                                 }
                                 // Partial match — keep accumulating.
-                                try self.sgml_declaration.append(byte);
+                                try this.sgml_declaration.append(byte);
                                 return;
                             }
                         }
@@ -426,27 +426,27 @@ pub fn Parser(comptime Context: type) type {
                             buf[decl.len] = std.ascii.toUpper(byte);
                             if (std.mem.eql(u8, buf[0..combined_len], constants.CDATA_SECTION_OPEN[0..combined_len])) {
                                 if (combined_len == constants.CDATA_SECTION_OPEN.len) {
-                                    try self.emitNode(.open_cdata, {});
-                                    self.state = .cdata;
-                                    self.sgml_declaration.clearRetainingCapacity();
-                                    self.cdata.clearRetainingCapacity();
+                                    try this.emitNode(.open_cdata, {});
+                                    this.state = .cdata;
+                                    this.sgml_declaration.clearRetainingCapacity();
+                                    this.cdata.clearRetainingCapacity();
                                     return;
                                 }
-                                try self.sgml_declaration.append(byte);
+                                try this.sgml_declaration.append(byte);
                                 return;
                             }
                         }
                     }
 
                     // Inside a DOCTYPE with a DTD subset
-                    switch (self.doctype) {
+                    switch (this.doctype) {
                         .building => |*b| {
-                            if (self.sgml_declaration.items.len > 0) {
-                                self.state = .doctype_dtd;
+                            if (this.sgml_declaration.items.len > 0) {
+                                this.state = .doctype_dtd;
                                 try b.appendSlice("<!");
-                                try b.appendSlice(self.sgml_declaration.items);
+                                try b.appendSlice(this.sgml_declaration.items);
                                 try b.append(byte);
-                                self.sgml_declaration.clearRetainingCapacity();
+                                this.sgml_declaration.clearRetainingCapacity();
                                 return;
                             }
                         },
@@ -454,45 +454,45 @@ pub fn Parser(comptime Context: type) type {
                     }
 
                     if (byte == '>') {
-                        try self.emitNode(.sgml_declaration, decl);
-                        self.sgml_declaration.clearRetainingCapacity();
-                        self.state = .text;
+                        try this.emitNode(.sgml_declaration, decl);
+                        this.sgml_declaration.clearRetainingCapacity();
+                        this.state = .text;
                     } else if (isQuote(byte)) {
-                        self.state = .sgml_declaration_quoted;
-                        self.quote_char = byte;
-                        try self.sgml_declaration.append(byte);
+                        this.state = .sgml_declaration_quoted;
+                        this.quote_char = byte;
+                        try this.sgml_declaration.append(byte);
                     } else {
-                        try self.sgml_declaration.append(byte);
+                        try this.sgml_declaration.append(byte);
                     }
                 },
 
                 .sgml_declaration_quoted => {
-                    if (byte == self.quote_char) {
-                        self.state = .sgml_declaration;
-                        self.quote_char = 0;
+                    if (byte == this.quote_char) {
+                        this.state = .sgml_declaration;
+                        this.quote_char = 0;
                     }
-                    try self.appendCp(&self.sgml_declaration, cp);
+                    try this.appendCp(&this.sgml_declaration, cp);
                 },
 
                 // ── DOCTYPE ───────────────────────────────────────────────────
                 .doctype => {
                     if (byte == '>') {
-                        self.state = .text;
-                        if (self.doctype == .building) {
-                            const body = self.doctype.building.items;
-                            try self.emitNode(.doctype, body);
-                            self.doctype.building.deinit();
+                        this.state = .text;
+                        if (this.doctype == .building) {
+                            const body = this.doctype.building.items;
+                            try this.emitNode(.doctype, body);
+                            this.doctype.building.deinit();
                         }
-                        self.doctype = .seen;
+                        this.doctype = .seen;
                     } else {
-                        switch (self.doctype) {
+                        switch (this.doctype) {
                             .building => |*b| {
                                 try b.append(byte);
                                 if (byte == '[') {
-                                    self.state = .doctype_dtd;
+                                    this.state = .doctype_dtd;
                                 } else if (isQuote(byte)) {
-                                    self.state = .doctype_quoted;
-                                    self.quote_char = byte;
+                                    this.state = .doctype_quoted;
+                                    this.quote_char = byte;
                                 }
                             },
                             else => {},
@@ -501,35 +501,35 @@ pub fn Parser(comptime Context: type) type {
                 },
 
                 .doctype_quoted => {
-                    switch (self.doctype) {
+                    switch (this.doctype) {
                         .building => |*b| try b.append(byte),
                         else => {},
                     }
-                    if (byte == self.quote_char) {
-                        self.quote_char = 0;
-                        self.state = .doctype;
+                    if (byte == this.quote_char) {
+                        this.quote_char = 0;
+                        this.state = .doctype;
                     }
                 },
 
                 .doctype_dtd => {
                     if (byte == ']') {
-                        switch (self.doctype) {
+                        switch (this.doctype) {
                             .building => |*b| try b.append(byte),
                             else => {},
                         }
-                        self.state = .doctype;
+                        this.state = .doctype;
                     } else if (byte == '<') {
-                        self.state = .open_waka;
-                        self.start_tag_position = self.position;
+                        this.state = .open_waka;
+                        this.start_tag_position = this.position;
                     } else if (isQuote(byte)) {
-                        switch (self.doctype) {
+                        switch (this.doctype) {
                             .building => |*b| try b.append(byte),
                             else => {},
                         }
-                        self.state = .doctype_dtd_quoted;
-                        self.quote_char = byte;
+                        this.state = .doctype_dtd_quoted;
+                        this.quote_char = byte;
                     } else {
-                        switch (self.doctype) {
+                        switch (this.doctype) {
                             .building => |*b| try b.append(byte),
                             else => {},
                         }
@@ -537,51 +537,51 @@ pub fn Parser(comptime Context: type) type {
                 },
 
                 .doctype_dtd_quoted => {
-                    switch (self.doctype) {
+                    switch (this.doctype) {
                         .building => |*b| try b.append(byte),
                         else => {},
                     }
-                    if (byte == self.quote_char) {
-                        self.state = .doctype_dtd;
-                        self.quote_char = 0;
+                    if (byte == this.quote_char) {
+                        this.state = .doctype_dtd;
+                        this.quote_char = 0;
                     }
                 },
 
                 // ── COMMENT ───────────────────────────────────────────────────
                 .comment => {
                     if (byte == '-') {
-                        self.state = .comment_ending;
+                        this.state = .comment_ending;
                     } else {
-                        try self.appendCp(&self.comment, cp);
+                        try this.appendCp(&this.comment, cp);
                     }
                 },
 
                 .comment_ending => {
                     if (byte == '-') {
-                        self.state = .comment_ended;
-                        var comment_text = try self.applyTextOptions(self.comment.items);
-                        defer self.allocator.free(comment_text);
+                        this.state = .comment_ended;
+                        var comment_text = try this.applyTextOptions(this.comment.items);
+                        defer this.allocator.free(comment_text);
                         if (comment_text.len > 0) {
-                            try self.emitNode(.comment, comment_text);
+                            try this.emitNode(.comment, comment_text);
                         }
-                        self.comment.clearRetainingCapacity();
+                        this.comment.clearRetainingCapacity();
                     } else {
-                        try self.comment.append('-');
-                        try self.appendCp(&self.comment, cp);
-                        self.state = .comment;
+                        try this.comment.append('-');
+                        try this.appendCp(&this.comment, cp);
+                        this.state = .comment;
                     }
                 },
 
                 .comment_ended => {
                     if (byte != '>') {
-                        self.strictFail("Malformed comment");
-                        try self.comment.appendSlice("--");
-                        try self.appendCp(&self.comment, cp);
-                        self.state = .comment;
+                        this.strictFail("Malformed comment");
+                        try this.comment.appendSlice("--");
+                        try this.appendCp(&this.comment, cp);
+                        this.state = .comment;
                     } else {
-                        switch (self.doctype) {
-                            .building => self.state = .doctype_dtd,
-                            else => self.state = .text,
+                        switch (this.doctype) {
+                            .building => this.state = .doctype_dtd,
+                            else => this.state = .text,
                         }
                     }
                 },
@@ -590,101 +590,101 @@ pub fn Parser(comptime Context: type) type {
                 .cdata => {
                     // Char-by-char CDATA accumulation.
                     if (byte == ']') {
-                        self.state = .cdata_ending;
+                        this.state = .cdata_ending;
                     } else {
-                        try self.appendCp(&self.cdata, cp);
+                        try this.appendCp(&this.cdata, cp);
                     }
                 },
 
                 .cdata_ending => {
                     if (byte == ']') {
-                        self.state = .cdata_ending_2;
+                        this.state = .cdata_ending_2;
                     } else {
-                        try self.cdata.append(']');
-                        try self.appendCp(&self.cdata, cp);
-                        self.state = .cdata;
+                        try this.cdata.append(']');
+                        try this.appendCp(&this.cdata, cp);
+                        this.state = .cdata;
                     }
                 },
 
                 .cdata_ending_2 => {
                     if (byte == '>') {
-                        if (self.cdata.items.len > 0) {
-                            try self.emitNode(.cdata, self.cdata.items);
+                        if (this.cdata.items.len > 0) {
+                            try this.emitNode(.cdata, this.cdata.items);
                         }
-                        try self.emitNode(.close_cdata, {});
-                        self.cdata.clearRetainingCapacity();
-                        self.state = .text;
+                        try this.emitNode(.close_cdata, {});
+                        this.cdata.clearRetainingCapacity();
+                        this.state = .text;
                     } else if (byte == ']') {
-                        try self.cdata.append(']');
+                        try this.cdata.append(']');
                     } else {
-                        try self.cdata.appendSlice("]]");
-                        try self.appendCp(&self.cdata, cp);
-                        self.state = .cdata;
+                        try this.cdata.appendSlice("]]");
+                        try this.appendCp(&this.cdata, cp);
+                        this.state = .cdata;
                     }
                 },
 
                 // ── PROCESSING INSTRUCTION ────────────────────────────────────
                 .processing_instruction => {
                     if (byte == '?') {
-                        self.state = .processing_instruction_ending;
+                        this.state = .processing_instruction_ending;
                     } else if (isWhitespace(byte)) {
-                        self.state = .processing_instruction_body;
+                        this.state = .processing_instruction_body;
                     } else {
-                        try self.appendCp(&self.proc_inst_name, cp);
+                        try this.appendCp(&this.proc_inst_name, cp);
                     }
                 },
 
                 .processing_instruction_body => {
-                    if (self.proc_inst_body.items.len == 0 and isWhitespace(byte)) {
+                    if (this.proc_inst_body.items.len == 0 and isWhitespace(byte)) {
                         // skip leading whitespace
                     } else if (byte == '?') {
-                        self.state = .processing_instruction_ending;
+                        this.state = .processing_instruction_ending;
                     } else {
-                        try self.appendCp(&self.proc_inst_body, cp);
+                        try this.appendCp(&this.proc_inst_body, cp);
                     }
                 },
 
                 .processing_instruction_ending => {
                     if (byte == '>') {
                         const pi = types.ProcessingInstruction{
-                            .name = self.proc_inst_name.items,
-                            .body = self.proc_inst_body.items,
+                            .name = this.proc_inst_name.items,
+                            .body = this.proc_inst_body.items,
                         };
-                        try self.emitNode(.processing_instruction, pi);
-                        self.proc_inst_name.clearRetainingCapacity();
-                        self.proc_inst_body.clearRetainingCapacity();
-                        self.state = .text;
+                        try this.emitNode(.processing_instruction, pi);
+                        this.proc_inst_name.clearRetainingCapacity();
+                        this.proc_inst_body.clearRetainingCapacity();
+                        this.state = .text;
                     } else {
-                        try self.proc_inst_body.append('?');
-                        try self.appendCp(&self.proc_inst_body, cp);
-                        self.state = .processing_instruction_body;
+                        try this.proc_inst_body.append('?');
+                        try this.appendCp(&this.proc_inst_body, cp);
+                        this.state = .processing_instruction_body;
                     }
                 },
 
                 // ── OPEN_TAG ──────────────────────────────────────────────────
                 .open_tag => {
                     if (unicode.isNameBody(cp)) {
-                        try self.appendCp(&self.tag_name, cp);
+                        try this.appendCp(&this.tag_name, cp);
                     } else {
-                        try self.newTag();
+                        try this.newTag();
                         if (byte == '>') {
-                            try self.openTag(false);
+                            try this.openTag(false);
                         } else if (byte == '/') {
-                            self.state = .open_tag_slash;
+                            this.state = .open_tag_slash;
                         } else {
-                            if (!isWhitespace(byte)) self.strictFail("Invalid character in tag name");
-                            self.state = .attribute;
+                            if (!isWhitespace(byte)) this.strictFail("Invalid character in tag name");
+                            this.state = .attribute;
                         }
                     }
                 },
 
                 .open_tag_slash => {
                     if (byte == '>') {
-                        try self.openTag(true);
-                        try self.closeTag();
+                        try this.openTag(true);
+                        try this.closeTag();
                     } else {
-                        self.strictFail("Forward-slash in opening tag not followed by >");
-                        self.state = .attribute;
+                        this.strictFail("Forward-slash in opening tag not followed by >");
+                        this.state = .attribute;
                     }
                 },
 
@@ -693,59 +693,59 @@ pub fn Parser(comptime Context: type) type {
                     if (isWhitespace(byte)) {
                         // skip
                     } else if (byte == '>') {
-                        try self.openTag(false);
+                        try this.openTag(false);
                     } else if (byte == '/') {
-                        self.state = .open_tag_slash;
+                        this.state = .open_tag_slash;
                     } else if (unicode.isNameStart(cp)) {
-                        self.attribute_name.clearRetainingCapacity();
-                        self.attribute_value.clearRetainingCapacity();
-                        try self.appendCp(&self.attribute_name, cp);
-                        self.state = .attribute_name;
+                        this.attribute_name.clearRetainingCapacity();
+                        this.attribute_value.clearRetainingCapacity();
+                        try this.appendCp(&this.attribute_name, cp);
+                        this.state = .attribute_name;
                     } else {
-                        self.strictFail("Invalid attribute name");
+                        this.strictFail("Invalid attribute name");
                     }
                 },
 
                 .attribute_name => {
                     if (byte == '=') {
-                        self.state = .attribute_value;
+                        this.state = .attribute_value;
                     } else if (byte == '>') {
-                        self.strictFail("Attribute without value");
+                        this.strictFail("Attribute without value");
                         // Use attribute name as value (non-strict).
-                        const name_copy = try self.allocator.dupe(u8, self.attribute_name.items);
-                        self.attribute_value.clearRetainingCapacity();
-                        try self.attribute_value.appendSlice(name_copy);
-                        self.allocator.free(name_copy);
-                        try self.processAttribute();
-                        try self.openTag(false);
+                        const name_copy = try this.allocator.dupe(u8, this.attribute_name.items);
+                        this.attribute_value.clearRetainingCapacity();
+                        try this.attribute_value.appendSlice(name_copy);
+                        this.allocator.free(name_copy);
+                        try this.processAttribute();
+                        try this.openTag(false);
                     } else if (isWhitespace(byte)) {
-                        self.state = .attribute_name_saw_white;
+                        this.state = .attribute_name_saw_white;
                     } else if (unicode.isNameBody(cp)) {
-                        try self.appendCp(&self.attribute_name, cp);
+                        try this.appendCp(&this.attribute_name, cp);
                     } else {
-                        self.strictFail("Invalid attribute name");
+                        this.strictFail("Invalid attribute name");
                     }
                 },
 
                 .attribute_name_saw_white => {
                     if (byte == '=') {
-                        self.state = .attribute_value;
+                        this.state = .attribute_value;
                     } else if (isWhitespace(byte)) {
                         // skip
                     } else {
-                        self.strictFail("Attribute without value");
+                        this.strictFail("Attribute without value");
                         // Emit the attribute with empty value.
-                        self.attribute_value.clearRetainingCapacity();
-                        try self.processAttribute();
-                        self.attribute_name.clearRetainingCapacity();
+                        this.attribute_value.clearRetainingCapacity();
+                        try this.processAttribute();
+                        this.attribute_name.clearRetainingCapacity();
                         if (byte == '>') {
-                            try self.openTag(false);
+                            try this.openTag(false);
                         } else if (unicode.isNameStart(cp)) {
-                            try self.appendCp(&self.attribute_name, cp);
-                            self.state = .attribute_name;
+                            try this.appendCp(&this.attribute_name, cp);
+                            this.state = .attribute_name;
                         } else {
-                            self.strictFail("Invalid attribute name");
-                            self.state = .attribute;
+                            this.strictFail("Invalid attribute name");
+                            this.state = .attribute;
                         }
                     }
                 },
@@ -754,99 +754,99 @@ pub fn Parser(comptime Context: type) type {
                     if (isWhitespace(byte)) {
                         // skip
                     } else if (isQuote(byte)) {
-                        self.quote_char = byte;
-                        self.state = .attribute_value_quoted;
+                        this.quote_char = byte;
+                        this.state = .attribute_value_quoted;
                     } else {
-                        if (!(self.options.unquoted_attribute_values orelse false)) {
-                            self.softFail("Unquoted attribute value");
+                        if (!(this.options.unquoted_attribute_values orelse false)) {
+                            this.softFail("Unquoted attribute value");
                         }
-                        self.attribute_value.clearRetainingCapacity();
-                        try self.appendCp(&self.attribute_value, cp);
-                        self.state = .attribute_value_unquoted;
+                        this.attribute_value.clearRetainingCapacity();
+                        try this.appendCp(&this.attribute_value, cp);
+                        this.state = .attribute_value_unquoted;
                     }
                 },
 
                 .attribute_value_quoted => {
-                    if (byte != self.quote_char) {
+                    if (byte != this.quote_char) {
                         if (byte == '&') {
-                            self.state = .attribute_value_entity_q;
+                            this.state = .attribute_value_entity_q;
                         } else {
-                            try self.appendCp(&self.attribute_value, cp);
+                            try this.appendCp(&this.attribute_value, cp);
                         }
                     } else {
-                        try self.processAttribute();
-                        self.quote_char = 0;
-                        self.state = .attribute_value_closed;
+                        try this.processAttribute();
+                        this.quote_char = 0;
+                        this.state = .attribute_value_closed;
                     }
                 },
 
                 .attribute_value_closed => {
                     if (isWhitespace(byte)) {
-                        self.state = .attribute;
+                        this.state = .attribute;
                     } else if (byte == '>') {
-                        try self.openTag(false);
+                        try this.openTag(false);
                     } else if (byte == '/') {
-                        self.state = .open_tag_slash;
+                        this.state = .open_tag_slash;
                     } else if (unicode.isNameStart(cp)) {
-                        self.strictFail("No whitespace between attributes");
-                        self.attribute_name.clearRetainingCapacity();
-                        try self.appendCp(&self.attribute_name, cp);
-                        self.attribute_value.clearRetainingCapacity();
-                        self.state = .attribute_name;
+                        this.strictFail("No whitespace between attributes");
+                        this.attribute_name.clearRetainingCapacity();
+                        try this.appendCp(&this.attribute_name, cp);
+                        this.attribute_value.clearRetainingCapacity();
+                        this.state = .attribute_name;
                     } else {
-                        self.strictFail("Invalid attribute name");
+                        this.strictFail("Invalid attribute name");
                     }
                 },
 
                 .attribute_value_unquoted => {
                     if (!isAttributeEnd(byte)) {
                         if (byte == '&') {
-                            self.state = .attribute_value_entity_u;
+                            this.state = .attribute_value_entity_u;
                         } else {
-                            try self.appendCp(&self.attribute_value, cp);
+                            try this.appendCp(&this.attribute_value, cp);
                         }
                     } else {
-                        try self.processAttribute();
+                        try this.processAttribute();
                         if (byte == '>') {
-                            try self.openTag(false);
+                            try this.openTag(false);
                         } else {
-                            self.state = .attribute;
+                            this.state = .attribute;
                         }
                     }
                 },
 
                 // ── CLOSE_TAG ─────────────────────────────────────────────────
                 .close_tag => {
-                    if (self.tag_name.items.len == 0) {
+                    if (this.tag_name.items.len == 0) {
                         if (isWhitespace(byte)) {
                             // skip
                         } else if (!unicode.isNameStart(cp)) {
-                            if (self.script.items.len > 0) {
-                                try self.script.append('<');
-                                try self.script.append('/');
-                                try self.appendCp(&self.script, cp);
-                                self.state = .script;
+                            if (this.script.items.len > 0) {
+                                try this.script.append('<');
+                                try this.script.append('/');
+                                try this.appendCp(&this.script, cp);
+                                this.state = .script;
                             } else {
-                                self.strictFail("Invalid tagname in closing tag.");
+                                this.strictFail("Invalid tagname in closing tag.");
                             }
                         } else {
-                            try self.appendCp(&self.tag_name, cp);
+                            try this.appendCp(&this.tag_name, cp);
                         }
                     } else if (byte == '>') {
-                        try self.closeTag();
+                        try this.closeTag();
                     } else if (unicode.isNameBody(cp)) {
-                        try self.appendCp(&self.tag_name, cp);
-                    } else if (self.script.items.len > 0) {
-                        try self.script.appendSlice("</");
-                        try self.script.appendSlice(self.tag_name.items);
-                        try self.appendCp(&self.script, cp);
-                        self.tag_name.clearRetainingCapacity();
-                        self.state = .script;
+                        try this.appendCp(&this.tag_name, cp);
+                    } else if (this.script.items.len > 0) {
+                        try this.script.appendSlice("</");
+                        try this.script.appendSlice(this.tag_name.items);
+                        try this.appendCp(&this.script, cp);
+                        this.tag_name.clearRetainingCapacity();
+                        this.state = .script;
                     } else {
                         if (!isWhitespace(byte)) {
-                            self.strictFail("Invalid tagname in closing tag");
+                            this.strictFail("Invalid tagname in closing tag");
                         }
-                        self.state = .close_tag_saw_white;
+                        this.state = .close_tag_saw_white;
                     }
                 },
 
@@ -854,58 +854,58 @@ pub fn Parser(comptime Context: type) type {
                     if (isWhitespace(byte)) {
                         // skip
                     } else if (byte == '>') {
-                        try self.closeTag();
+                        try this.closeTag();
                     } else {
-                        self.strictFail("Invalid characters in closing tag");
+                        this.strictFail("Invalid characters in closing tag");
                     }
                 },
 
                 // ── ENTITY STATES ─────────────────────────────────────────────
                 .text_entity, .attribute_value_entity_q, .attribute_value_entity_u => {
-                    const return_state: State = switch (self.state) {
+                    const return_state: State = switch (this.state) {
                         .text_entity => .text,
                         .attribute_value_entity_q => .attribute_value_quoted,
                         .attribute_value_entity_u => .attribute_value_unquoted,
                         else => unreachable,
                     };
-                    const target_is_text = self.state == .text_entity;
+                    const target_is_text = this.state == .text_entity;
 
                     if (byte == ';') {
-                        const parsed = try self.parseEntity();
-                        defer self.allocator.free(parsed);
+                        const parsed = try this.parseEntity();
+                        defer this.allocator.free(parsed);
 
                         // In unparsed_entities mode, non-predefined entities are
                         // re-fed through the parser.
-                        if (self.options.unparsed_entities and !isXmlPredefinedEntityValue(parsed)) {
-                            self.entity.clearRetainingCapacity();
-                            self.state = return_state;
-                            try self.write(parsed);
+                        if (this.options.unparsed_entities and !isXmlPredefinedEntityValue(parsed)) {
+                            this.entity.clearRetainingCapacity();
+                            this.state = return_state;
+                            try this.write(parsed);
                         } else {
                             if (target_is_text) {
-                                try self.text_node.appendSlice(parsed);
+                                try this.text_node.appendSlice(parsed);
                             } else {
-                                try self.attribute_value.appendSlice(parsed);
+                                try this.attribute_value.appendSlice(parsed);
                             }
-                            self.entity.clearRetainingCapacity();
-                            self.state = return_state;
+                            this.entity.clearRetainingCapacity();
+                            this.state = return_state;
                         }
-                    } else if (self.entity.items.len == 0 and unicode.isEntityStart(cp)) {
-                        try self.appendCp(&self.entity, cp);
-                    } else if (self.entity.items.len > 0 and unicode.isEntityBody(cp)) {
-                        try self.appendCp(&self.entity, cp);
+                    } else if (this.entity.items.len == 0 and unicode.isEntityStart(cp)) {
+                        try this.appendCp(&this.entity, cp);
+                    } else if (this.entity.items.len > 0 and unicode.isEntityBody(cp)) {
+                        try this.appendCp(&this.entity, cp);
                     } else {
-                        self.strictFail("Invalid character in entity name");
+                        this.strictFail("Invalid character in entity name");
                         if (target_is_text) {
-                            try self.text_node.append('&');
-                            try self.text_node.appendSlice(self.entity.items);
-                            try self.appendCp(&self.text_node, cp);
+                            try this.text_node.append('&');
+                            try this.text_node.appendSlice(this.entity.items);
+                            try this.appendCp(&this.text_node, cp);
                         } else {
-                            try self.attribute_value.append('&');
-                            try self.attribute_value.appendSlice(self.entity.items);
-                            try self.appendCp(&self.attribute_value, cp);
+                            try this.attribute_value.append('&');
+                            try this.attribute_value.appendSlice(this.entity.items);
+                            try this.appendCp(&this.attribute_value, cp);
                         }
-                        self.entity.clearRetainingCapacity();
-                        self.state = return_state;
+                        this.entity.clearRetainingCapacity();
+                        this.state = return_state;
                     }
                 },
 
@@ -913,74 +913,74 @@ pub fn Parser(comptime Context: type) type {
                 else => {
                     // States like comment_starting are transitional and should
                     // never be the active state when entering step().
-                    std.debug.panic("SAX parser: unhandled state {s}", .{@tagName(self.state)});
+                    std.debug.panic("SAX parser: unhandled state {s}", .{@tagName(this.state)});
                 },
             }
         }
 
         // ─── helper: beginWhiteSpace ──────────────────────────────────────────
 
-        fn beginWhiteSpace(self: *Self, cp: u21, byte: u8) !void {
+        fn beginWhiteSpace(this: *@This(), cp: u21, byte: u8) !void {
             _ = cp;
             if (byte == '<') {
-                self.state = .open_waka;
-                self.start_tag_position = self.position;
+                this.state = .open_waka;
+                this.start_tag_position = this.position;
             } else if (!isWhitespace(byte)) {
-                self.strictFail("Non-whitespace before first tag.");
-                self.text_node.clearRetainingCapacity();
-                try self.text_node.append(byte);
-                self.state = .text;
+                this.strictFail("Non-whitespace before first tag.");
+                this.text_node.clearRetainingCapacity();
+                try this.text_node.append(byte);
+                this.state = .text;
             }
         }
 
         // ─── helper: newTag ───────────────────────────────────────────────────
 
-        fn newTag(self: *Self) !void {
-            if (!self.options.strict and self.options.lowercase) {
-                asciiLowerInPlace(self.tag_name.items);
-            } else if (!self.options.strict) {
-                asciiUpperInPlace(self.tag_name.items);
+        fn newTag(this: *@This()) !void {
+            if (!this.options.strict and this.options.lowercase) {
+                asciiLowerInPlace(this.tag_name.items);
+            } else if (!this.options.strict) {
+                asciiUpperInPlace(this.tag_name.items);
             }
 
-            const name = try self.allocator.dupe(u8, self.tag_name.items);
-            var tag = types.Tag.init(self.allocator, name);
+            const name = try this.allocator.dupe(u8, this.tag_name.items);
+            var tag = types.Tag.init(this.allocator, name);
 
-            if (self.options.xmlns) {
-                tag.ns = self.currentNs();
+            if (this.options.xmlns) {
+                tag.ns = this.currentNs();
             }
 
-            self.current_tag = tag;
-            self.current_tag_ns = if (self.options.xmlns) self.currentNs() else null;
+            this.current_tag = tag;
+            this.current_tag_ns = if (this.options.xmlns) this.currentNs() else null;
 
             // Clear deferred attribute list.
-            for (self.attribute_list.items) |item| {
-                self.allocator.free(item.name);
-                self.allocator.free(item.value);
+            for (this.attribute_list.items) |item| {
+                this.allocator.free(item.name);
+                this.allocator.free(item.value);
             }
-            self.attribute_list.clearRetainingCapacity();
+            this.attribute_list.clearRetainingCapacity();
 
-            try self.emitNode(.open_tag_start, &self.current_tag.?);
+            try this.emitNode(.open_tag_start, &this.current_tag.?);
         }
 
         // ─── helper: openTag ──────────────────────────────────────────────────
 
-        fn openTag(self: *Self, self_closing: bool) !void {
-            var tag = &self.current_tag.?;
+        fn openTag(this: *@This(), this_closing: bool) !void {
+            var tag = &this.current_tag.?;
 
-            if (self.options.xmlns) {
+            if (this.options.xmlns) {
                 const qn = getQName(tag.name, false);
-                tag.prefix = try self.allocator.dupe(u8, qn.prefix);
-                tag.local_name = try self.allocator.dupe(u8, qn.local_name);
+                tag.prefix = try this.allocator.dupe(u8, qn.prefix);
+                tag.local_name = try this.allocator.dupe(u8, qn.local_name);
 
                 // Look up URI for the tag's prefix.
-                const parent_ns = self.currentNs();
+                const parent_ns = this.currentNs();
                 const tag_ns = tag.ns orelse parent_ns;
                 const uri = if (tag_ns) |ns| ns.get(qn.prefix) orelse "" else "";
-                tag.uri = try self.allocator.dupe(u8, uri);
+                tag.uri = try this.allocator.dupe(u8, uri);
 
                 if (qn.prefix.len > 0 and uri.len == 0) {
-                    self.strictFail("Unbound namespace prefix on element");
-                    tag.uri = try self.allocator.dupe(u8, qn.prefix);
+                    this.strictFail("Unbound namespace prefix on element");
+                    tag.uri = try this.allocator.dupe(u8, qn.prefix);
                 }
 
                 // Emit onOpenNamespace for new bindings.
@@ -988,7 +988,7 @@ pub fn Parser(comptime Context: type) type {
                     if (parent_ns == null or ns != parent_ns.?) {
                         var it = ns.entries.iterator();
                         while (it.next()) |entry| {
-                            try self.emitNode(.open_namespace, types.NamespaceBinding{
+                            try this.emitNode(.open_namespace, types.NamespaceBinding{
                                 .prefix = entry.key_ptr.*,
                                 .uri = entry.value_ptr.*,
                             });
@@ -997,7 +997,7 @@ pub fn Parser(comptime Context: type) type {
                 }
 
                 // Process deferred attribute list.
-                for (self.attribute_list.items) |deferred| {
+                for (this.attribute_list.items) |deferred| {
                     const aqn = getQName(deferred.name, true);
                     const a_uri: []const u8 = if (aqn.prefix.len == 0)
                         ""
@@ -1015,122 +1015,122 @@ pub fn Parser(comptime Context: type) type {
                     };
 
                     if (aqn.prefix.len > 0 and !std.mem.eql(u8, aqn.prefix, "xmlns") and a_uri.len == 0) {
-                        self.strictFail("Unbound namespace prefix on attribute");
+                        this.strictFail("Unbound namespace prefix on attribute");
                         attr.uri = aqn.prefix;
                     }
 
                     try tag.attributes.put(deferred.name, attr);
-                    try self.emitNode(.attribute, attr);
-                    self.allocator.free(deferred.name);
-                    self.allocator.free(deferred.value);
+                    try this.emitNode(.attribute, attr);
+                    this.allocator.free(deferred.name);
+                    this.allocator.free(deferred.value);
                 }
-                self.attribute_list.clearRetainingCapacity();
+                this.attribute_list.clearRetainingCapacity();
             }
 
-            tag.is_self_closing = self_closing;
-            self.has_seen_root = true;
+            tag.is_this_closing = this_closing;
+            this.has_seen_root = true;
 
             // Push onto the tag stack.
-            try self.tags.append(.{
-                .tag = self.current_tag.?,
-                .ns = self.current_tag_ns,
+            try this.tags.append(.{
+                .tag = this.current_tag.?,
+                .ns = this.current_tag_ns,
             });
-            self.current_tag = null;
-            self.current_tag_ns = null;
+            this.current_tag = null;
+            this.current_tag_ns = null;
 
-            try self.emitNode(.open_tag, &self.tags.items[self.tags.items.len - 1].tag);
+            try this.emitNode(.open_tag, &this.tags.items[this.tags.items.len - 1].tag);
 
-            if (!self_closing) {
-                const tag_name_lower = try std.ascii.allocLowerString(self.allocator, self.tags.items[self.tags.items.len - 1].tag.name);
-                defer self.allocator.free(tag_name_lower);
-                if (!self.options.no_script and std.mem.eql(u8, tag_name_lower, "script")) {
-                    self.state = .script;
+            if (!this_closing) {
+                const tag_name_lower = try std.ascii.allocLowerString(this.allocator, this.tags.items[this.tags.items.len - 1].tag.name);
+                defer this.allocator.free(tag_name_lower);
+                if (!this.options.no_script and std.mem.eql(u8, tag_name_lower, "script")) {
+                    this.state = .script;
                 } else {
-                    self.state = .text;
+                    this.state = .text;
                 }
             }
 
-            self.attribute_name.clearRetainingCapacity();
-            self.attribute_value.clearRetainingCapacity();
+            this.attribute_name.clearRetainingCapacity();
+            this.attribute_value.clearRetainingCapacity();
         }
 
         // ─── helper: closeTag ─────────────────────────────────────────────────
 
-        fn closeTag(self: *Self) !void {
-            if (self.tag_name.items.len == 0) {
-                self.strictFail("Weird empty close tag.");
-                try self.text_node.appendSlice("</>");
-                self.state = .text;
+        fn closeTag(this: *@This()) !void {
+            if (this.tag_name.items.len == 0) {
+                this.strictFail("Weird empty close tag.");
+                try this.text_node.appendSlice("</>");
+                this.state = .text;
                 return;
             }
 
             // Handle <script> close in non-strict mode.
-            if (self.script.items.len > 0) {
-                if (!std.mem.eql(u8, self.tag_name.items, "script")) {
-                    try self.script.appendSlice("</");
-                    try self.script.appendSlice(self.tag_name.items);
-                    try self.script.append('>');
-                    self.tag_name.clearRetainingCapacity();
-                    self.state = .script;
+            if (this.script.items.len > 0) {
+                if (!std.mem.eql(u8, this.tag_name.items, "script")) {
+                    try this.script.appendSlice("</");
+                    try this.script.appendSlice(this.tag_name.items);
+                    try this.script.append('>');
+                    this.tag_name.clearRetainingCapacity();
+                    this.state = .script;
                     return;
                 }
-                try self.emitNode(.script, self.script.items);
-                self.script.clearRetainingCapacity();
+                try this.emitNode(.script, this.script.items);
+                this.script.clearRetainingCapacity();
             }
 
             // Normalise the tag name.
-            if (!self.options.strict and self.options.lowercase) {
-                asciiLowerInPlace(self.tag_name.items);
-            } else if (!self.options.strict) {
-                asciiUpperInPlace(self.tag_name.items);
+            if (!this.options.strict and this.options.lowercase) {
+                asciiLowerInPlace(this.tag_name.items);
+            } else if (!this.options.strict) {
+                asciiUpperInPlace(this.tag_name.items);
             }
 
-            const close_to = self.tag_name.items;
+            const close_to = this.tag_name.items;
 
             // Find the matching open tag on the stack (searching backwards).
-            var t: usize = self.tags.items.len;
+            var t: usize = this.tags.items.len;
             var found = false;
             while (t > 0) {
                 t -= 1;
-                const entry = &self.tags.items[t];
+                const entry = &this.tags.items[t];
                 if (std.mem.eql(u8, entry.tag.name, close_to)) {
                     found = true;
                     t += 1; // point one past the match so the loop below works
                     break;
                 } else {
-                    self.strictFail("Unexpected close tag");
+                    this.strictFail("Unexpected close tag");
                 }
             }
 
             if (!found) {
-                self.strictFail("Unmatched closing tag");
-                try self.text_node.appendSlice("</");
-                try self.text_node.appendSlice(self.tag_name.items);
-                try self.text_node.append('>');
-                self.state = .text;
-                self.tag_name.clearRetainingCapacity();
+                this.strictFail("Unmatched closing tag");
+                try this.text_node.appendSlice("</");
+                try this.text_node.appendSlice(this.tag_name.items);
+                try this.text_node.append('>');
+                this.state = .text;
+                this.tag_name.clearRetainingCapacity();
                 return;
             }
 
             // Pop tags from stack down to the matched level.
-            while (self.tags.items.len >= t) {
-                var entry = self.tags.pop();
+            while (this.tags.items.len >= t) {
+                var entry = this.tags.pop();
                 const tag = &entry.tag;
 
-                try self.emitNode(.close_tag, tag.name);
+                try this.emitNode(.close_tag, tag.name);
 
                 // Emit onCloseNamespace for bindings introduced by this tag.
-                if (self.options.xmlns) {
-                    const parent_ns: ?*types.NamespaceMap = if (self.tags.items.len > 0)
-                        self.tags.items[self.tags.items.len - 1].ns
+                if (this.options.xmlns) {
+                    const parent_ns: ?*types.NamespaceMap = if (this.tags.items.len > 0)
+                        this.tags.items[this.tags.items.len - 1].ns
                     else
-                        self.root_ns;
+                        this.root_ns;
                     if (entry.ns) |ns| {
                         const p_ns = parent_ns;
                         if (p_ns == null or ns != p_ns.?) {
                             var it = ns.entries.iterator();
                             while (it.next()) |kv| {
-                                try self.emitNode(.close_namespace, types.NamespaceBinding{
+                                try this.emitNode(.close_namespace, types.NamespaceBinding{
                                     .prefix = kv.key_ptr.*,
                                     .uri = kv.value_ptr.*,
                                 });
@@ -1140,98 +1140,98 @@ pub fn Parser(comptime Context: type) type {
                 }
 
                 tag.deinit();
-                self.allocator.free(tag.name);
+                this.allocator.free(tag.name);
             }
 
-            if (t == 1) self.closed_root = true;
+            if (t == 1) this.closed_root = true;
 
-            self.tag_name.clearRetainingCapacity();
-            self.attribute_name.clearRetainingCapacity();
-            self.attribute_value.clearRetainingCapacity();
-            for (self.attribute_list.items) |item| {
-                self.allocator.free(item.name);
-                self.allocator.free(item.value);
+            this.tag_name.clearRetainingCapacity();
+            this.attribute_name.clearRetainingCapacity();
+            this.attribute_value.clearRetainingCapacity();
+            for (this.attribute_list.items) |item| {
+                this.allocator.free(item.name);
+                this.allocator.free(item.value);
             }
-            self.attribute_list.clearRetainingCapacity();
-            self.state = .text;
+            this.attribute_list.clearRetainingCapacity();
+            this.state = .text;
         }
 
         // ─── helper: processAttribute ─────────────────────────────────────────
 
-        fn processAttribute(self: *Self) !void {
-            if (!self.options.strict and self.options.lowercase) {
-                asciiLowerInPlace(self.attribute_name.items);
-            } else if (!self.options.strict) {
-                asciiUpperInPlace(self.attribute_name.items);
+        fn processAttribute(this: *@This()) !void {
+            if (!this.options.strict and this.options.lowercase) {
+                asciiLowerInPlace(this.attribute_name.items);
+            } else if (!this.options.strict) {
+                asciiUpperInPlace(this.attribute_name.items);
             }
 
             // Deduplicate.
-            if (self.current_tag) |*tag| {
-                if (tag.attributes.contains(self.attribute_name.items)) {
-                    self.attribute_name.clearRetainingCapacity();
-                    self.attribute_value.clearRetainingCapacity();
+            if (this.current_tag) |*tag| {
+                if (tag.attributes.contains(this.attribute_name.items)) {
+                    this.attribute_name.clearRetainingCapacity();
+                    this.attribute_value.clearRetainingCapacity();
                     return;
                 }
             }
             // Also check deferred list (xmlns mode).
-            for (self.attribute_list.items) |item| {
-                if (std.mem.eql(u8, item.name, self.attribute_name.items)) {
-                    self.attribute_name.clearRetainingCapacity();
-                    self.attribute_value.clearRetainingCapacity();
+            for (this.attribute_list.items) |item| {
+                if (std.mem.eql(u8, item.name, this.attribute_name.items)) {
+                    this.attribute_name.clearRetainingCapacity();
+                    this.attribute_value.clearRetainingCapacity();
                     return;
                 }
             }
 
-            const name = try self.allocator.dupe(u8, self.attribute_name.items);
-            const value = try self.allocator.dupe(u8, self.attribute_value.items);
+            const name = try this.allocator.dupe(u8, this.attribute_name.items);
+            const value = try this.allocator.dupe(u8, this.attribute_value.items);
 
-            if (self.options.xmlns) {
+            if (this.options.xmlns) {
                 // Handle namespace bindings.
                 const qn = getQName(name, true);
                 if (std.mem.eql(u8, qn.prefix, "xmlns")) {
                     const local = qn.local_name;
                     // Validate xml: and xmlns: bindings.
                     if (std.mem.eql(u8, local, "xml") and !std.mem.eql(u8, value, constants.NAMESPACE_XML)) {
-                        self.strictFail("xml: prefix must be bound to " ++ constants.NAMESPACE_XML);
+                        this.strictFail("xml: prefix must be bound to " ++ constants.NAMESPACE_XML);
                     } else if (std.mem.eql(u8, local, "xmlns") and !std.mem.eql(u8, value, constants.NAMESPACE_XMLNS)) {
-                        self.strictFail("xmlns: prefix must be bound to " ++ constants.NAMESPACE_XMLNS);
-                    } else if (self.current_tag) |*tag| {
-                        const parent_ns = self.currentNs();
+                        this.strictFail("xmlns: prefix must be bound to " ++ constants.NAMESPACE_XMLNS);
+                    } else if (this.current_tag) |*tag| {
+                        const parent_ns = this.currentNs();
                         // Ensure this tag has its own namespace map.
                         if (tag.ns == null or tag.ns == parent_ns) {
-                            tag.ns = try self.newNs(parent_ns);
+                            tag.ns = try this.newNs(parent_ns);
                         }
                         try tag.ns.?.put(local, value);
                     }
                 }
                 // Defer the attribute event.
-                try self.attribute_list.append(.{ .name = name, .value = value });
+                try this.attribute_list.append(.{ .name = name, .value = value });
             } else {
                 const attr = types.Attribute{ .name = name, .value = value };
-                if (self.current_tag) |*tag| {
+                if (this.current_tag) |*tag| {
                     try tag.attributes.put(name, attr);
                 }
-                try self.emitNode(.attribute, attr);
-                self.allocator.free(name);
-                self.allocator.free(value);
+                try this.emitNode(.attribute, attr);
+                this.allocator.free(name);
+                this.allocator.free(value);
             }
 
-            self.attribute_name.clearRetainingCapacity();
-            self.attribute_value.clearRetainingCapacity();
+            this.attribute_name.clearRetainingCapacity();
+            this.attribute_value.clearRetainingCapacity();
         }
 
         // ─── helper: parseEntity ──────────────────────────────────────────────
 
-        fn parseEntity(self: *Self) ![]u8 {
-            const raw = self.entity.items;
+        fn parseEntity(this: *@This()) ![]u8 {
+            const raw = this.entity.items;
 
             // First try exact name match.
             if (constants.xmlPredefinedEntityValue(raw)) |val| {
-                return try self.allocator.dupe(u8, val);
+                return try this.allocator.dupe(u8, val);
             }
 
             // Case-insensitive lookup if not strict_entities.
-            if (!self.options.strict_entities) {
+            if (!this.options.strict_entities) {
                 var lower_buf: [64]u8 = undefined;
                 if (raw.len <= lower_buf.len) {
                     const lower = std.ascii.lowerString(lower_buf[0..raw.len], raw);
@@ -1241,10 +1241,10 @@ pub fn Parser(comptime Context: type) type {
                     if (cp_opt) |cp| {
                         var out: [4]u8 = undefined;
                         const enc_len = std.unicode.utf8Encode(cp, &out) catch {
-                            self.strictFail("Invalid character entity codepoint");
-                            return try std.fmt.allocPrint(self.allocator, "&{s};", .{raw});
+                            this.strictFail("Invalid character entity codepoint");
+                            return try std.fmt.allocPrint(this.allocator, "&{s};", .{raw});
                         };
-                        return try self.allocator.dupe(u8, out[0..enc_len]);
+                        return try this.allocator.dupe(u8, out[0..enc_len]);
                     }
                 }
             }
@@ -1262,54 +1262,54 @@ pub fn Parser(comptime Context: type) type {
                 while (stripped.len > 0 and stripped[0] == '0') stripped = stripped[1..];
 
                 const number = std.fmt.parseInt(u21, stripped, radix) catch {
-                    self.strictFail("Invalid character entity");
-                    return try std.fmt.allocPrint(self.allocator, "&{s};", .{raw});
+                    this.strictFail("Invalid character entity");
+                    return try std.fmt.allocPrint(this.allocator, "&{s};", .{raw});
                 };
 
                 if (number == 0 or number > 0x10FFFF) {
-                    self.strictFail("Invalid character entity");
-                    return try std.fmt.allocPrint(self.allocator, "&{s};", .{raw});
+                    this.strictFail("Invalid character entity");
+                    return try std.fmt.allocPrint(this.allocator, "&{s};", .{raw});
                 }
 
                 var out: [4]u8 = undefined;
                 const len = std.unicode.utf8Encode(number, &out) catch {
-                    self.strictFail("Invalid character entity codepoint");
-                    return try std.fmt.allocPrint(self.allocator, "&{s};", .{raw});
+                    this.strictFail("Invalid character entity codepoint");
+                    return try std.fmt.allocPrint(this.allocator, "&{s};", .{raw});
                 };
-                return try self.allocator.dupe(u8, out[0..len]);
+                return try this.allocator.dupe(u8, out[0..len]);
             }
 
-            self.strictFail("Invalid character entity");
-            return try std.fmt.allocPrint(self.allocator, "&{s};", .{raw});
+            this.strictFail("Invalid character entity");
+            return try std.fmt.allocPrint(this.allocator, "&{s};", .{raw});
         }
 
         // ─── helper: closeText ────────────────────────────────────────────────
 
-        fn closeText(self: *Self) !void {
-            if (self.text_node.items.len == 0) return;
-            const processed = try self.applyTextOptions(self.text_node.items);
-            defer self.allocator.free(processed);
+        fn closeText(this: *@This()) !void {
+            if (this.text_node.items.len == 0) return;
+            const processed = try this.applyTextOptions(this.text_node.items);
+            defer this.allocator.free(processed);
             if (processed.len > 0) {
-                self.emit(.text, processed);
+                this.emit(.text, processed);
             }
-            self.text_node.clearRetainingCapacity();
+            this.text_node.clearRetainingCapacity();
         }
 
         // ─── helper: applyTextOptions ─────────────────────────────────────────
 
-        fn applyTextOptions(self: *Self, text: []const u8) ![]u8 {
-            if (!self.options.trim and !self.options.normalize) {
-                return try self.allocator.dupe(u8, text);
+        fn applyTextOptions(this: *@This(), text: []const u8) ![]u8 {
+            if (!this.options.trim and !this.options.normalize) {
+                return try this.allocator.dupe(u8, text);
             }
-            var result = try self.allocator.dupe(u8, text);
-            if (self.options.trim) {
+            var result = try this.allocator.dupe(u8, text);
+            if (this.options.trim) {
                 const trimmed = std.mem.trim(u8, result, &std.ascii.whitespace);
-                const new = try self.allocator.dupe(u8, trimmed);
-                self.allocator.free(result);
+                const new = try this.allocator.dupe(u8, trimmed);
+                this.allocator.free(result);
                 result = new;
             }
-            if (self.options.normalize) {
-                var out = std.ArrayList(u8).init(self.allocator);
+            if (this.options.normalize) {
+                var out = std.ArrayList(u8).init(this.allocator);
                 defer out.deinit();
                 var in_ws = false;
                 for (result) |c| {
@@ -1323,7 +1323,7 @@ pub fn Parser(comptime Context: type) type {
                         in_ws = false;
                     }
                 }
-                self.allocator.free(result);
+                this.allocator.free(result);
                 result = try out.toOwnedSlice();
             }
             return result;
@@ -1331,17 +1331,17 @@ pub fn Parser(comptime Context: type) type {
 
         // ─── helper: checkBufferLength ────────────────────────────────────────
 
-        fn checkBufferLength(self: *Self) !void {
+        fn checkBufferLength(this: *@This()) !void {
             const threshold = @max(MAX_BUFFER_LENGTH, 10);
             var max_actual: usize = 0;
 
             const buffers = [_]*std.ArrayList(u8){
-                &self.attribute_name,   &self.attribute_value,
-                &self.cdata,            &self.comment,
-                &self.entity,           &self.proc_inst_body,
-                &self.proc_inst_name,   &self.script,
-                &self.sgml_declaration, &self.tag_name,
-                &self.text_node,
+                &this.attribute_name,   &this.attribute_value,
+                &this.cdata,            &this.comment,
+                &this.entity,           &this.proc_inst_body,
+                &this.proc_inst_name,   &this.script,
+                &this.sgml_declaration, &this.tag_name,
+                &this.text_node,
             };
             const names = [_][]const u8{
                 "attributeName",   "attributeValue", "cdata",        "comment",
@@ -1353,52 +1353,52 @@ pub fn Parser(comptime Context: type) type {
                 const len = buf.items.len;
                 if (len > threshold) {
                     if (std.mem.eql(u8, name, "textNode")) {
-                        try self.closeText();
+                        try this.closeText();
                     } else if (std.mem.eql(u8, name, "cdata")) {
-                        try self.emitNode(.cdata, buf.items);
+                        try this.emitNode(.cdata, buf.items);
                         buf.clearRetainingCapacity();
                     } else if (std.mem.eql(u8, name, "script")) {
-                        try self.emitNode(.script, buf.items);
+                        try this.emitNode(.script, buf.items);
                         buf.clearRetainingCapacity();
                     } else {
-                        self.softFail("Max buffer length exceeded");
+                        this.softFail("Max buffer length exceeded");
                     }
                 }
                 if (len > max_actual) max_actual = len;
             }
 
-            self.buffer_check_position = MAX_BUFFER_LENGTH - max_actual + self.position;
+            this.buffer_check_position = MAX_BUFFER_LENGTH - max_actual + this.position;
         }
 
         // ─── helper: flushBuffers ─────────────────────────────────────────────
 
-        fn flushBuffers(self: *Self) !void {
-            try self.closeText();
-            if (self.cdata.items.len > 0) {
-                try self.emitNode(.cdata, self.cdata.items);
-                self.cdata.clearRetainingCapacity();
+        fn flushBuffers(this: *@This()) !void {
+            try this.closeText();
+            if (this.cdata.items.len > 0) {
+                try this.emitNode(.cdata, this.cdata.items);
+                this.cdata.clearRetainingCapacity();
             }
-            if (self.script.items.len > 0) {
-                try self.emitNode(.script, self.script.items);
-                self.script.clearRetainingCapacity();
+            if (this.script.items.len > 0) {
+                try this.emitNode(.script, this.script.items);
+                this.script.clearRetainingCapacity();
             }
         }
 
         // ─── error helpers ────────────────────────────────────────────────────
 
-        fn softFail(self: *Self, message: []const u8) void {
-            self.had_error = true;
+        fn softFail(this: *@This(), message: []const u8) void {
+            this.had_error = true;
             const err = types.ParserError{
                 .message = message,
-                .line = self.line_number,
-                .column = self.column_number,
+                .line = this.line_number,
+                .column = this.column_number,
             };
-            self.emit(.@"error", err);
+            this.emit(.@"error", err);
         }
 
-        fn strictFail(self: *Self, message: []const u8) void {
-            if (self.options.strict) {
-                self.softFail(message);
+        fn strictFail(this: *@This(), message: []const u8) void {
+            if (this.options.strict) {
+                this.softFail(message);
             }
         }
 
@@ -1426,77 +1426,77 @@ pub fn Parser(comptime Context: type) type {
             close_namespace,
         };
 
-        fn emit(self: *Self, comptime tag: EventTag, data: anytype) void {
-            const ctx = self.handlers.context;
+        fn emit(this: *@This(), comptime tag: EventTag, data: anytype) void {
+            const ctx = this.handlers.context;
             switch (tag) {
                 .ready => {
-                    if (self.handlers.on_ready) |h| h(ctx);
+                    if (this.handlers.on_ready) |h| h(ctx);
                 },
                 .end => {
-                    if (self.handlers.on_end) |h| h(ctx);
+                    if (this.handlers.on_end) |h| h(ctx);
                 },
                 .@"error" => {
-                    if (self.handlers.on_error) |h| h(ctx, data);
+                    if (this.handlers.on_error) |h| h(ctx, data);
                 },
                 .text => {
-                    if (self.handlers.on_text) |h| h(ctx, data);
+                    if (this.handlers.on_text) |h| h(ctx, data);
                 },
                 .open_tag_start => {
-                    if (self.handlers.on_open_tag_start) |h| h(ctx, data);
+                    if (this.handlers.on_open_tag_start) |h| h(ctx, data);
                 },
                 .open_tag => {
-                    if (self.handlers.on_open_tag) |h| h(ctx, data);
+                    if (this.handlers.on_open_tag) |h| h(ctx, data);
                 },
                 .close_tag => {
-                    if (self.handlers.on_close_tag) |h| h(ctx, data);
+                    if (this.handlers.on_close_tag) |h| h(ctx, data);
                 },
                 .attribute => {
-                    if (self.handlers.on_attribute) |h| h(ctx, data);
+                    if (this.handlers.on_attribute) |h| h(ctx, data);
                 },
                 .comment => {
-                    if (self.handlers.on_comment) |h| h(ctx, data);
+                    if (this.handlers.on_comment) |h| h(ctx, data);
                 },
                 .open_cdata => {
-                    if (self.handlers.on_open_cdata) |h| h(ctx);
+                    if (this.handlers.on_open_cdata) |h| h(ctx);
                 },
                 .cdata => {
-                    if (self.handlers.on_cdata) |h| h(ctx, data);
+                    if (this.handlers.on_cdata) |h| h(ctx, data);
                 },
                 .close_cdata => {
-                    if (self.handlers.on_close_cdata) |h| h(ctx);
+                    if (this.handlers.on_close_cdata) |h| h(ctx);
                 },
                 .doctype => {
-                    if (self.handlers.on_doctype) |h| h(ctx, data);
+                    if (this.handlers.on_doctype) |h| h(ctx, data);
                 },
                 .processing_instruction => {
-                    if (self.handlers.on_processing_instruction) |h| h(ctx, data);
+                    if (this.handlers.on_processing_instruction) |h| h(ctx, data);
                 },
                 .sgml_declaration => {
-                    if (self.handlers.on_sgml_declaration) |h| h(ctx, data);
+                    if (this.handlers.on_sgml_declaration) |h| h(ctx, data);
                 },
                 .script => {
-                    if (self.handlers.on_script) |h| h(ctx, data);
+                    if (this.handlers.on_script) |h| h(ctx, data);
                 },
                 .open_namespace => {
-                    if (self.handlers.on_open_namespace) |h| h(ctx, data);
+                    if (this.handlers.on_open_namespace) |h| h(ctx, data);
                 },
                 .close_namespace => {
-                    if (self.handlers.on_close_namespace) |h| h(ctx, data);
+                    if (this.handlers.on_close_namespace) |h| h(ctx, data);
                 },
             }
         }
 
         /// Emit an event that must first flush any pending text node.
-        fn emitNode(self: *Self, comptime tag: EventTag, data: anytype) !void {
-            try self.closeText();
-            self.emit(tag, data);
+        fn emitNode(this: *@This(), comptime tag: EventTag, data: anytype) !void {
+            try this.closeText();
+            this.emit(tag, data);
         }
 
         // ─── misc utils ───────────────────────────────────────────────────────
 
         /// Append a Unicode codepoint to an ArrayList(u8) as UTF-8.
-        fn appendCp(self: *Self, buf: *std.ArrayList(u8), cp: u21) !void {
-            _ = self;
+        fn appendCp(this: *@This(), buf: *std.ArrayList(u8), cp: u21) !void {
+            _ = this;
             if (cp < 0x80) {
                 try buf.append(@intCast(cp));
             } else {

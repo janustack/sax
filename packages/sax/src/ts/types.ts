@@ -29,6 +29,7 @@ export type WasmExports = {
 	isAttributeEnd(byte: number): boolean;
 	isQuote(byte: number): boolean;
 	isWhitespace(byte: number): boolean;
+	getQName(ptr: number, len: number, isAttribute: number): number;
 	memory: WebAssembly.Memory;
 };
 
@@ -55,11 +56,10 @@ export interface SAXHandlers {
 
 export interface SAXOptions {
 	lowercase?: boolean;
+	namespaces?: boolean;
 	normalize?: boolean;
-	position?: boolean;
 	strict?: boolean;
 	trim?: boolean;
-	xmlns?: boolean;
 	trackPosition?: boolean;
 	strictEntities?: boolean;
 }

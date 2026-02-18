@@ -17,31 +17,46 @@ import type {
 	Tag,
 	WasmExports,
 } from "./types.js";
-import { applyTextOptions, getQName, isMatch } from "./utils.js";
 import {
+	applyTextOptions,
+	getQName,
 	isAttributeEnd,
+	isMatch,
 	isQuote,
 	isWhitespace,
+} from "./utils.js";
+import {
+	//getQName,
+	//isAttributeEnd,
+	//isQuote,
+	// isWhitespace,
 	setWasmExports,
 } from "./wasm.js";
 
 export class Parser {
-	public error: SAXParserError | null;
-	public static textDecoder: TextDecoder = new TextDecoder();
-	public wasm?: WasmExports;
-
-	tag: Tag | null;
-	tags: Tag[];
-	public handlers: SAXHandlers;
+	public static decoder: TextDecoder = new TextDecoder();
+	public error: SAXParserError | null = null;
+	public handlers: Partial<SAXHandlers>;
 	public options: SAXOptions;
+	public tag: Tag | null = null;
+	public tags: Tag[] = [];
+
+	private column = 0;
+	private line = 0;
+	private position = 0;
+	private startTagPosition = 0;
+
+	private attributeList: [string, string][] = [];
 	private bufferCheckPosition = MAX_BUFFER_LENGTH;
 	private caseTransform: "toLowerCase" | "toUpperCase";
-	private state: State;
-
-	private trackPosition: boolean;
-	private isRootClosed: boolean;
-	private hasSeenRoot: boolean;
-	private isEnded: boolean;
+	private ENTITIES: Record<string, string>;
+	private hasDoctype = false;
+	private hasSeenRoot = false;
+	private isEnded = false;
+	private isRootClosed = false;
+	private ns: Record<string, string>;
+	private state = State.BEGIN;
+	private wasm: WasmExports | undefined;
 
 	// Buffer strings
 	private attributeName = "";
@@ -57,48 +72,43 @@ export class Parser {
 	private sgmlDeclaration = "";
 	private tagName = "";
 	private textNode = "";
+	// or declare the variables here instead?
 
-	constructor(options: SAXOptions, handlers: SAXHandlers) {
-		this.clearBuffers();
-		this.quoteChar = "";
-		this.char = "";
-		this.bufferCheckPosition = MAX_BUFFER_LENGTH;
-		this.handlers = handlers ?? {};
-		this.options = options ?? {};
-		this.options.lowercase =
-			this.options.lowercase || this.options.lowercaseTags;
-		this.caseTransform = this.options.lowercase ? "toLowerCase" : "toUpperCase";
-		this.tags = [];
-		this.isEnded = false;
-		this.isRootClosed = false;
-		this.hasSeenRoot = false;
-		this.tag = null;
-		this.error = null;
-		this.state = State.BEGIN;
-		this.ENTITIES = this.options.strictEntities
-			? Object.create(XML_PREDEFINED_ENTITIES)
-			: Object.create(HTML_NAMED_CHARACTER_ENTITIES);
-		this.attributeList = [];
+	constructor(
+		options: Partial<SAXOptions> = {},
+		handlers: Partial<SAXHandlers> = {},
+	) {
+		this.handlers = handlers;
 
-		// namespaces form a prototype chain.
-		// it always points at the current tag,
-		// which protos to its parent tag.
-		if (this.options.xmlns) {
+		this.options = {
+			lowercase: false,
+			namespaces: false,
+			normalize: false,
+			strict: false,
+			trackPosition: false,
+			trim: false,
+			...options,
+		};
+
+		if (this.options.lowercase) {
+			this.caseTransform = "toLowerCase";
+		} else {
+			this.caseTransform = "toUpperCase";
+		}
+
+		if (this.options.strictEntities) {
+			this.ENTITIES = Object.create(XML_PREDEFINED_ENTITIES);
+		} else {
+			this.ENTITIES = Object.create(HTML_NAMED_CHARACTER_ENTITIES);
+		}
+
+		if (this.options.namespaces) {
 			this.ns = Object.create(NAMESPACES);
 		}
 
 		// disallow unquoted attribute values if not otherwise configured  and strict mode is true
 		if (this.options.unquotedAttributeValues === undefined) {
 			this.options.unquotedAttributeValues = !this.options.strict;
-		}
-
-		this.trackPosition = this.options.trackPosition ?? false;
-
-		// mostly just for error reporting
-		if (this.trackPosition) {
-			this.position = 0;
-			this.lineNumber = 0;
-			this.columnNumber = 0;
 		}
 
 		this.emit("onReady");
@@ -136,6 +146,10 @@ export class Parser {
 	}
 
 	public end(): void {
+		if (this.isEnded) return;
+
+		this.flush();
+
 		if (this.hasSeenRoot && !this.isRootClosed) {
 			this.fail("Unclosed root tag");
 		}
@@ -148,12 +162,19 @@ export class Parser {
 			this.fail("Unexpected end");
 		}
 
-		this.closeText();
-
 		this.char = "";
 		this.isEnded = true;
 
 		this.emit("onEnd");
+	}
+
+	public flush(): void {
+		this.closeText();
+
+		if (this.cdata !== "") {
+			this.emitNode("onCdata", this.cdata);
+			this.cdata = "";
+		}
 	}
 
 	public write(chunk: Uint8Array | string): void {
@@ -166,8 +187,8 @@ export class Parser {
 			return;
 		}
 
-		if (typeof chunk === "object") {
-			chunk = chunk.toString();
+		if (chunk instanceof Uint8Array) {
+			chunk = Parser.decoder.decode(chunk, { stream: true });
 		}
 
 		let i = 0;
@@ -181,14 +202,14 @@ export class Parser {
 				break;
 			}
 
-			if (this.trackPosition) {
-				this.position++;
+			if (this.options.trackPosition) {
+				this.position += 1;
 
 				if (char === "\n") {
-					this.lineNumber++;
-					this.columnNumber = 0;
+					this.line += 1;
+					this.column = 0;
 				} else {
-					this.columnNumber++;
+					this.column += 1;
 				}
 			}
 
@@ -216,14 +237,14 @@ export class Parser {
 						while (char && char !== "<" && char !== "&") {
 							char = chunk.charAt(i++);
 
-							if (char && this.trackPosition) {
-								this.position++;
+							if (char && this.options.trackPosition) {
+								this.position += 1;
 
 								if (char === "\n") {
-									this.lineNumber++;
-									this.columnNumber = 0;
+									this.line += 1;
+									this.column = 0;
 								} else {
-									this.columnNumber++;
+									this.column += 1;
 								}
 							}
 						}
@@ -305,7 +326,11 @@ export class Parser {
 						continue;
 					}
 
-					if (this.doctype && this.doctype !== true && this.sgmlDeclaration) {
+					if (
+						this.doctype &&
+						this.hasDoctype !== true &&
+						this.sgmlDeclaration
+					) {
 						this.state = State.DOCTYPE_DTD;
 						this.doctype += `<!${this.sgmlDeclaration}${char}`;
 						this.sgmlDeclaration = "";
@@ -364,7 +389,7 @@ export class Parser {
 					if (char === ">") {
 						this.state = State.TEXT;
 						this.emitNode("onDoctype", this.doctype);
-						this.doctype = true; // remember we saw one
+						this.hasDoctype = true; // remember we saw one
 						continue;
 					}
 
@@ -464,7 +489,7 @@ export class Parser {
 						continue;
 					}
 
-					if (this.doctype && this.doctype !== true) {
+					if (this.doctype && this.hasDoctype !== true) {
 						this.state = State.DOCTYPE_DTD;
 						continue;
 					}
@@ -479,16 +504,16 @@ export class Parser {
 					while (char && char !== "]") {
 						char = chunk.charAt(i++);
 
-						if (char && this.trackPosition) {
-							this.position++;
+						if (char && this.options.trackPosition) {
+							this.position += 1;
 
 							if (char === "\n") {
-								this.lineNumber++;
-								this.columnNumber = 0;
+								this.line += 1;
+								this.column = 0;
 								continue;
 							}
 
-							this.columnNumber++;
+							this.column += 1;
 						}
 					}
 
@@ -923,7 +948,7 @@ export class Parser {
 		}
 
 		if (
-			this.attributeList.includes(this.attributeName) ||
+			this.attributeList.indexOf(this.attributeName) !== -1 ||
 			Object.hasOwn(this.tag.attributes, this.attributeName)
 		) {
 			this.attributeName = "";
@@ -931,10 +956,8 @@ export class Parser {
 			return;
 		}
 
-		if (this.options.xmlns) {
-			const qName = getQName(this.attributeName, true);
-			const prefix = qName.prefix;
-			const localName = qName.localName;
+		if (this.options.namespaces) {
+			const { localName, prefix } = getQName(this.attributeName, true);
 
 			if (prefix === "xmlns") {
 				// namespace binding attribute. push the binding into scope
@@ -1030,12 +1053,6 @@ export class Parser {
 		this.bufferCheckPosition = MAX_BUFFER_LENGTH - maxActual + this.position;
 	}
 
-	private clearBuffers(): void {
-		for (const buffer of BUFFERS) {
-			this[buffer] = "";
-		}
-	}
-
 	private closeTag(): void {
 		if (!this.tagName) {
 			this.fail("Weird empty close tag.");
@@ -1086,7 +1103,7 @@ export class Parser {
 
 			const parent = this.tags.at(-1) || this;
 
-			if (this.options.xmlns && tag.ns !== parent.ns) {
+			if (this.options.namespaces && tag.ns !== parent.ns) {
 				// remove namespace bindings introduced by tag
 				Object.keys(tag.ns).forEach((prefix) => {
 					this.emitNode("onCloseNamespace", { prefix, uri: tag.ns[prefix] });
@@ -1105,7 +1122,7 @@ export class Parser {
 		this.state = State.TEXT;
 	}
 
-	private closeText() {
+	private closeText(): void {
 		this.textNode = applyTextOptions(this.options, this.textNode);
 		if (this.textNode) {
 			this.emit("onText", this.textNode);
@@ -1129,23 +1146,10 @@ export class Parser {
 
 	private fail(message: string): this {
 		this.closeText();
-		const error = new SAXParserError(
-			this.columnNumber,
-			this.lineNumber,
-			message,
-		);
+		const error = new SAXParserError(this.column, this.line, message);
 		this.error = error;
 		this.emit("onError", error);
 		return this;
-	}
-
-	public flush(): void {
-		this.closeText();
-
-		if (this.cdata !== "") {
-			this.emitNode("onCdata", this.cdata);
-			this.cdata = "";
-		}
 	}
 
 	private newTag(): void {
@@ -1163,22 +1167,25 @@ export class Parser {
 		this.tag = tag;
 
 		// will be overridden if tag contails an xmlns="foo" or xmlns:foo="bar"
-		if (this.options.xmlns) {
+		if (this.options.namespaces) {
 			tag.ns = parent.ns;
 		}
 
 		this.attributeList.length = 0;
-		this.emitNode("onOpenTagStart", tag);
+		this.emitNode("onOpenTagStart", {
+			...tag,
+			attributes: { ...tag.attributes },
+		});
 	}
 
 	private openTag(selfClosing?: boolean): void {
-		if (this.options.xmlns) {
+		if (this.options.namespaces) {
 			const tag = this.tag;
 			const qName = getQName(this.tagName);
 
 			tag.prefix = qName.prefix;
 			tag.localName = qName.localName;
-			tag.uri = tag.ns[qName.prefix] || "";
+			tag.uri = tag.ns[qName.prefix] ?? "";
 
 			if (tag.prefix && !tag.uri) {
 				this.fail(`Unbound namespace prefix: ${JSON.stringify(this.tagName)}`);
@@ -1198,12 +1205,17 @@ export class Parser {
 
 			// handle deferred onattribute events
 			// Note: do not apply default ns to attributes:
-			//   http://www.w3.org/TR/REC-xml-names/#defaulting
+			// http://www.w3.org/TR/REC-xml-names/#defaulting
 			for (const [name, value] of this.attributeList) {
 				const qName = getQName(name, true);
 				const prefix = qName.prefix;
 				const localName = qName.localName;
-				const uri = prefix === "" ? "" : tag.ns[prefix] || "";
+
+				let uri = "";
+
+				if (prefix !== "") {
+					uri = tag.ns[prefix] ?? "";
+				}
 
 				const attribute: Attribute = {
 					name,
@@ -1219,6 +1231,7 @@ export class Parser {
 					this.fail(`Unbound namespace prefix: ${JSON.stringify(prefix)}`);
 					attribute.uri = prefix;
 				}
+
 				this.tag.attributes[name] = attribute;
 				this.emitNode("onAttribute", attribute);
 			}
@@ -1246,20 +1259,15 @@ export class Parser {
 	}
 
 	private parseEntity(): string {
-		let entity = this.entity;
-		const entityLC = entity.toLowerCase();
+		const raw = this.entity;
+		const lc = raw.toLowerCase();
+
+		const named = this.ENTITIES[raw] ?? this.ENTITIES[lc];
+		if (named !== undefined) return named;
+
+		let entity = lc;
 		let number = NaN;
 		let numberString = "";
-
-		if (this.ENTITIES[entity]) {
-			return this.ENTITIES[entity];
-		}
-
-		if (this.ENTITIES[entityLC]) {
-			return this.ENTITIES[entityLC];
-		}
-
-		entity = entityLC;
 
 		if (entity.startsWith("#")) {
 			if (entity.startsWith("#x")) {
