@@ -1,12 +1,10 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    // Allow -Doptimize=ReleaseFast/ReleaseSmall/etc. (default ReleaseFast)
     const optimize = b.standardOptimizeOption(.{
         .preferred_optimize_mode = .ReleaseFast,
     });
 
-    // Fixed target: wasm32-freestanding
     const target = b.resolveTargetQuery(.{
         .cpu_arch = .wasm32,
         .os_tag = .freestanding,
@@ -35,7 +33,7 @@ pub fn build(b: *std.Build) void {
 
     // IMPORTANT: pass the emitted file as a lazy arg (do NOT call getPath)
     cp.addFileArg(exe.getEmittedBin());
-    cp.addArg("src/wasm/utils.wasm");
+    cp.addArg("src/wasm/lib.wasm");
 
     // Run on `zig build`
     b.default_step.dependOn(&cp.step);

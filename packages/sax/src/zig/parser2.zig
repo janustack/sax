@@ -1,7 +1,9 @@
 const std = @import("std");
 
-/// XML Predefined entities
-pub const XML_ENTITIES = std.StaticStringMap(u8).initComptime(.{
+pub const xml = "http://www.w3.org/XML/1998/namespace";
+pub const xmlns = "http://www.w3.org/2000/xmlns/";
+
+pub const xml_predefined_entities = std.StaticStringMap(u8).initComptime(.{
     .{ "amp", '&' },
     .{ "apos", '\'' },
     .{ "gt", '>' },
@@ -9,17 +11,13 @@ pub const XML_ENTITIES = std.StaticStringMap(u8).initComptime(.{
     .{ "quot", '"' },
 });
 
-// To make Parser a non-generic struct, we use an opaque pointer for the context.
-// Users cast this to their specific struct type in callbacks.
-pub const Context = *anyopaque;
-
 pub const State = enum(u8) {
     begin,
     begin_whitespace,
     text,
     text_entity,
     open_waka,
-    sgml_decl,
+    sgml_declaration,
     sgml_decl_quoted,
     doctype,
     doctype_quoted,
@@ -31,9 +29,9 @@ pub const State = enum(u8) {
     cdata,
     cdata_ending,
     cdata_ending_2,
-    proc_inst,
-    proc_inst_body,
-    proc_inst_ending,
+    processing_instruction,
+    processing_instruction_body,
+    processing_instruction_ending,
     open_tag,
     open_tag_slash,
     attribute,
@@ -68,23 +66,6 @@ pub const Options = struct {
     position: bool = false,
 };
 
-/// Interface for handling parser events
-pub const Handler = struct {
-    on_error: ?*const fn (ctx: Context, err: []const u8) void = null,
-    on_text: ?*const fn (ctx: Context, text: []const u8) void = null,
-    on_doctype: ?*const fn (ctx: Context, doctype: []const u8) void = null,
-    on_processing_instruction: ?*const fn (ctx: Context, name: []const u8, body: []const u8) void = null,
-    on_sgml_declaration: ?*const fn (ctx: Context, decl: []const u8) void = null,
-    on_open_tag_start: ?*const fn (ctx: Context, tag: Tag) void = null,
-    on_open_tag: ?*const fn (ctx: Context, tag: Tag) void = null,
-    on_close_tag: ?*const fn (ctx: Context, name: []const u8) void = null,
-    on_attribute: ?*const fn (ctx: Context, attr: Attribute) void = null,
-    on_comment: ?*const fn (ctx: Context, comment: []const u8) void = null,
-    on_cdata: ?*const fn (ctx: Context, cdata: []const u8) void = null,
-    on_ready: ?*const fn (ctx: Context) void = null,
-    on_end: ?*const fn (ctx: Context) void = null,
-};
-
 pub const Parser = struct {
     allocator: std.mem.Allocator,
     state: State,
@@ -96,12 +77,12 @@ pub const Parser = struct {
     position: usize = 0,
     line: usize = 0,
     column: usize = 0,
-    tag_stack: std.ArrayList([]const u8), // Strings need to be owned
+    tag_stack: std.ArrayList([]u8), // Strings need to be owned
 
     // Buffers
     tag_name: std.ArrayList(u8),
-    attr_name: std.ArrayList(u8),
-    attr_value: std.ArrayList(u8),
+    attribute_name: std.ArrayList(u8),
+    attribute_value: std.ArrayList(u8),
     text_node: std.ArrayList(u8),
     comment: std.ArrayList(u8),
     cdata: std.ArrayList(u8),
@@ -109,7 +90,7 @@ pub const Parser = struct {
     proc_inst_body: std.ArrayList(u8),
     entity: std.ArrayList(u8),
     doctype: std.ArrayList(u8),
-    sgml_decl: std.ArrayList(u8),
+    sgml_declaration: std.ArrayList(u8),
 
     // Temp state
     quote_char: u8 = 0,
@@ -121,12 +102,11 @@ pub const Parser = struct {
             .state = .begin,
             .options = options,
             .handlers = handlers,
-            .context = context,
-            // In new Zig, ArrayLists are initialized as empty structs (no allocator stored)
+            .context = context,b
             .tag_stack = .empty,
             .tag_name = .empty,
-            .attr_name = .empty,
-            .attr_value = .empty,
+            .attribute_name = .empty,
+            .attribute_value = .empty,
             .text_node = .empty,
             .comment = .empty,
             .cdata = .empty,
@@ -134,7 +114,7 @@ pub const Parser = struct {
             .proc_inst_body = .empty,
             .entity = .empty,
             .doctype = .empty,
-            .sgml_decl = .empty,
+            .sgml_declaration = .empty,
             .current_tag_name = .empty,
         };
         if (parser.handlers.on_ready) |h| h(parser.context);
@@ -146,8 +126,8 @@ pub const Parser = struct {
         this.tag_stack.deinit(this.allocator);
 
         this.tag_name.deinit(this.allocator);
-        this.attr_name.deinit(this.allocator);
-        this.attr_value.deinit(this.allocator);
+        this.attribute_name.deinit(this.allocator);
+        this.attribute_value.deinit(this.allocator);
         this.text_node.deinit(this.allocator);
         this.comment.deinit(this.allocator);
         this.cdata.deinit(this.allocator);
@@ -155,17 +135,13 @@ pub const Parser = struct {
         this.proc_inst_body.deinit(this.allocator);
         this.entity.deinit(this.allocator);
         this.doctype.deinit(this.allocator);
-        this.sgml_decl.deinit(this.allocator);
+        this.sgml_declaration.deinit(this.allocator);
         this.current_tag_name.deinit(this.allocator);
     }
 
-    pub fn end(this: *@This()) void {}
-
-    pub fn flush(this: *@This()) void {}
-
     pub fn write(this: *@This(), chunk: []const u8) !void {
         for (chunk) |char| {
-            if (this.options.trackPosition) {
+            if (this.options.position) {
                 this.position += 1;
                 if (char == '\n') {
                     this.line += 1;
@@ -179,8 +155,8 @@ pub const Parser = struct {
     }
 
     fn processAttribute(this: *@This()) !void {
-        const name_slice = this.attr_name.items;
-        const val_slice = this.attr_value.items;
+        const name_slice = this.attribute_name.items;
+        const val_slice = this.attribute_value.items;
 
         // Note: In strict mode, duplicates should be checked here.
         // For SAX streaming, we emit as we find them.
@@ -189,8 +165,8 @@ pub const Parser = struct {
 
         if (this.handlers.on_attribute) |h| h(this.context, attr);
 
-        this.attr_name.clearRetainingCapacity();
-        this.attr_value.clearRetainingCapacity();
+        this.attribute_name.clearRetainingCapacity();
+        this.attribute_value.clearRetainingCapacity();
     }
 
     fn processChar(this: *@This(), c: u8) !void {
@@ -213,8 +189,8 @@ pub const Parser = struct {
             .text_entity => try this.handleEntity(c, .text),
             .open_waka => {
                 if (c == '!') {
-                    this.state = .sgml_decl;
-                    this.sgml_decl.clearRetainingCapacity();
+                    this.state = .sgml_declaration;
+                    this.sgml_declaration.clearRetainingCapacity();
                 } else if (std.ascii.isWhitespace(c)) {
                     // ignore
                 } else if (isNameStart(c)) {
@@ -265,9 +241,9 @@ pub const Parser = struct {
                 } else if (c == '/') {
                     this.state = .open_tag_slash;
                 } else if (isNameStart(c)) {
-                    this.attr_name.clearRetainingCapacity();
-                    try this.attr_name.append(this.allocator, c);
-                    this.attr_value.clearRetainingCapacity();
+                    this.attribute_name.clearRetainingCapacity();
+                    try this.attribute_name.append(this.allocator, c);
+                    this.attribute_value.clearRetainingCapacity();
                     this.state = .attribute_name;
                 }
             },
@@ -280,7 +256,7 @@ pub const Parser = struct {
                 } else if (std.ascii.isWhitespace(c)) {
                     this.state = .attribute_name_saw_white;
                 } else if (isNameBody(c)) {
-                    try this.attr_name.append(this.allocator, c);
+                    try this.attribute_name.append(this.allocator, c);
                 }
             },
             .attribute_name_saw_white => {
@@ -293,19 +269,19 @@ pub const Parser = struct {
                     if (c == '>') {
                         try this.openTag();
                     } else if (isNameStart(c)) {
-                        this.attr_name.clearRetainingCapacity();
-                        try this.attr_name.append(this.allocator, c);
+                        this.attribute_name.clearRetainingCapacity();
+                        try this.attribute_name.append(this.allocator, c);
                         this.state = .attribute_name;
                     }
                 }
             },
             .attribute_value => {
-                if (isWhitespace(c)) return;
+                if (std.ascii.isWhitespace(c)) return;
                 if (isQuote(c)) {
                     this.quote_char = c;
                     this.state = .attribute_value_quoted;
                 } else {
-                    try this.attr_value.append(this.allocator, c);
+                    try this.attribute_value.append(this.allocator, c);
                     this.state = .attribute_value_unquoted;
                 }
             },
@@ -317,7 +293,7 @@ pub const Parser = struct {
                 } else if (c == '&') {
                     this.state = .attribute_value_entity_quoted;
                 } else {
-                    try this.attr_value.append(this.allocator, c);
+                    try this.attribute_value.append(this.allocator, c);
                 }
             },
             .attribute_value_closed => {
@@ -328,8 +304,8 @@ pub const Parser = struct {
                 } else if (c == '/') {
                     this.state = .open_tag_slash;
                 } else if (isNameStart(c)) {
-                    this.attr_name.clearRetainingCapacity();
-                    try this.attr_name.append(this.allocator, c);
+                    this.attribute_name.clearRetainingCapacity();
+                    try this.attribute_name.append(this.allocator, c);
                     this.state = .attribute_name;
                 }
             },
@@ -343,7 +319,7 @@ pub const Parser = struct {
                 } else if (c == '&') {
                     this.state = .attribute_value_entity_unquoted;
                 } else {
-                    try this.attr_value.append(this.allocator, c);
+                    try this.attribute_value.append(this.allocator, c);
                 }
             },
             .attribute_value_entity_quoted => try this.handleEntity(c, .attribute_value_quoted),
@@ -390,24 +366,24 @@ pub const Parser = struct {
                     this.state = .comment;
                 }
             },
-            .sgml_decl => {
-                try this.sgml_decl.append(this.allocator, c);
-                const s = this.sgml_decl.items;
+            .sgml_declaration => {
+                try this.sgml_declaration.append(this.allocator, c);
+                const s = this.sgml_declaration.items;
 
                 // Detection logic matching parser.ts
                 if (std.mem.eql(u8, s, "--")) {
                     this.state = .comment;
                     this.comment.clearRetainingCapacity();
-                    this.sgml_decl.clearRetainingCapacity();
+                    this.sgml_declaration.clearRetainingCapacity();
                 } else if (std.mem.eql(u8, s, "[CDATA[")) {
                     this.state = .cdata;
                     this.cdata.clearRetainingCapacity();
-                    this.sgml_decl.clearRetainingCapacity();
+                    this.sgml_declaration.clearRetainingCapacity();
                     if (this.handlers.on_cdata) |h| h(this.context, ""); // Open signal
                 } else if (std.mem.eql(u8, s, "DOCTYPE")) {
                     this.state = .doctype;
                     this.doctype.clearRetainingCapacity();
-                    this.sgml_decl.clearRetainingCapacity();
+                    this.sgml_declaration.clearRetainingCapacity();
                 } else if (s.len > 7 and !std.mem.eql(u8, s[0..7], "DOCTYPE") and !std.mem.eql(u8, s[0..7], "[CDATA[")) {
                     // Fallback for malformed SGML or just quote handling
                     if (isQuote(c)) {
@@ -416,16 +392,16 @@ pub const Parser = struct {
                     } else if (c == '>') {
                         if (this.handlers.on_sgml_declaration) |h| h(this.context, s[0 .. s.len - 1]);
                         this.state = .text;
-                        this.sgml_decl.clearRetainingCapacity();
+                        this.sgml_declaration.clearRetainingCapacity();
                     }
                 }
             },
             .sgml_decl_quoted => {
                 if (c == this.quote_char) {
-                    this.state = .sgml_decl;
+                    this.state = .sgml_declaration;
                     this.quote_char = 0;
                 }
-                try this.sgml_decl.append(this.allocator, c);
+                try this.sgml_declaration.append(this.allocator, c);
             },
             .doctype => {
                 if (c == '>') {
@@ -493,25 +469,25 @@ pub const Parser = struct {
                     this.state = .cdata;
                 }
             },
-            .proc_inst => {
+            .processing_instruction => {
                 if (c == '?') {
-                    this.state = .proc_inst_ending;
+                    this.state = .processing_instruction_ending;
                 } else if (std.ascii.isWhitespace(c)) {
-                    this.state = .proc_inst_body;
+                    this.state = .processing_instruction_body;
                 } else {
                     try this.proc_inst_name.append(this.allocator, c);
                 }
             },
-            .proc_inst_body => {
+            .processing_instruction_body => {
                 if (this.proc_inst_body.items.len == 0 and std.ascii.isWhitespace(c)) {
                     // ignore leading whitespace
                 } else if (c == '?') {
-                    this.state = .proc_inst_ending;
+                    this.state = .processing_instruction_ending;
                 } else {
                     try this.proc_inst_body.append(this.allocator, c);
                 }
             },
-            .proc_inst_ending => {
+            .processing_instruction_ending => {
                 if (c == '>') {
                     if (this.handlers.on_processing_instruction) |h| h(this.context, this.proc_inst_name.items, this.proc_inst_body.items);
                     this.state = .text;
@@ -548,7 +524,7 @@ pub const Parser = struct {
         var decoded_codepoint: ?u32 = null;
 
         // Named entities
-        if (XML_ENTITIES.get(ent)) |val| {
+        if (xml_predefined_entities.get(ent)) |val| {
             decoded_codepoint = val;
         } else if (std.mem.startsWith(u8, ent, "#x")) {
             // Hex
@@ -562,7 +538,7 @@ pub const Parser = struct {
             }
         }
 
-        const target = if (return_state == .text) &this.text_node else &this.attr_value;
+        const target = if (return_state == .text) &this.text_node else &this.attribute_value;
 
         if (decoded_codepoint) |cp| {
             var buf: [4]u8 = undefined;
@@ -648,7 +624,7 @@ pub const Parser = struct {
             // In non-strict, we'd normally want to modify actual_name_list, but for compare we just use lower
             if (std.mem.eql(u8, expected, lower)) {
                 if (this.handlers.on_close_tag) |h| h(this.context, lower);
-                const popped = this.tag_stack.pop();
+                const popped = this.tag_stack.pop() orelse unreachable;
                 this.allocator.free(popped);
             } else {
                 if (this.handlers.on_error) |h| h(this.context, "Tag mismatch");
@@ -656,7 +632,7 @@ pub const Parser = struct {
         } else {
             if (std.mem.eql(u8, expected, actual_name_list.items)) {
                 if (this.handlers.on_close_tag) |h| h(this.context, actual_name_list.items);
-                const popped = this.tag_stack.pop();
+                const popped = this.tag_stack.pop() orelse unreachable;
                 this.allocator.free(popped);
             } else {
                 if (this.handlers.on_error) |h| h(this.context, "Tag mismatch");
@@ -679,13 +655,47 @@ pub const Parser = struct {
             this.text_node.clearRetainingCapacity();
         }
     }
+
+   	fn reset(this: *@This()) void {
+        this.error = null;
+		this.tag = null;
+		this.tags.length = 0;
+		this.attributeList.length = 0;
+
+		this.bufferCheckPosition = MAX_BUFFER_LENGTH;
+		this.column = 0;
+		this.line = 0;
+		this.position = 0;
+		this.startTagPosition = 0;
+
+		this.hasDoctype = false;
+		this.hasSeenRoot = false;
+		this.isEnded = false;
+		this.isRootClosed = false;
+		this.state = State.BEGIN;
+
+		if (this.options.namespaces) {
+			this.ns = Object.create(NAMESPACES);
+		}
+
+		this.attributeName = "";
+		this.attributeValue = "";
+		this.cdata = "";
+		this.char = "";
+		this.comment = "";
+		this.doctype = "";
+		this.entity = "";
+		this.piBody = "";
+		this.piName = "";
+		this.quoteChar = "";
+		this.sgmlDeclaration = "";
+		this.tagName = "";
+		this.textNode = "";
+	}
 };
 
 fn isAttributeEnd(byte: u8) bool {
-    if (byte == '>' or std.ascii.isWhitespace(byte)) {
-        return true;
-    }
-    return false;
+    return byte == '>' or std.ascii.isWhitespace(byte);
 }
 
 fn isQuote(byte: u8) bool {
@@ -699,9 +709,3 @@ fn isNameStart(c: u8) bool {
 fn isNameBody(c: u8) bool {
     return isNameStart(c) or std.ascii.isDigit(c) or c == '-' or c == '.';
 }
-
-pub export fn end() void {}
-
-pub export fn write(pointer: [*]const u8, length: usize) void {}
-
-pub export fn flush() void {}

@@ -1,9 +1,12 @@
-import type { WasmExports } from "../src/ts/types.ts";
+import type { WasmExports } from "../../src/ts/types.ts";
 import {
 	isAttributeEnd as isAttributeEndJS,
 	isQuote as isQuoteJS,
 	isWhitespace as isWhitespaceJS,
-} from "../src/ts/utils.ts";
+	getQName as getQNameJS,
+} from "./utilsJS.test.ts";
+
+import { isAttributeEnd, isQuote, isWhitespace } from "../../src/ts/utils.ts";
 
 let wasmExports: WasmExports;
 
@@ -18,34 +21,19 @@ export function readString(
 	return decoder.decode(bytes);
 }
 
-function toBool(v: number | boolean): boolean {
-	return typeof v === "boolean" ? v : v !== 0;
-}
-
 async function initWasm() {
-	const wasmPath = "../src/wasm/utils.wasm";
-	const wasmURL = new URL(wasmPath, import.meta.url);
-	const wasmFile = Bun.file(wasmURL);
-	const buffer = await wasmFile.arrayBuffer();
+	const path = "../../src/wasm/utils.wasm";
+	const url = new URL(path, import.meta.url);
+	const bytes = await Bun.file(url).bytes();
 
 	const env = {};
 
-	const { instance } = await WebAssembly.instantiate(buffer, {
+	const { instance } = await WebAssembly.instantiate(bytes, {
 		env,
 	});
 
 	wasmExports = instance.exports as unknown as WasmExports;
 	return wasmExports;
-}
-
-export function isWhitespace(char: string): boolean {
-	return toBool(wasmExports.isWhitespace(char.charCodeAt(0)));
-}
-export function isQuote(char: string): boolean {
-	return toBool(wasmExports.isQuote(char.charCodeAt(0)));
-}
-export function isAttributeEnd(char: string): boolean {
-	return toBool(wasmExports.isAttributeEnd(char.charCodeAt(0)));
 }
 
 async function main() {
@@ -56,10 +44,12 @@ async function main() {
 	console.log(isWhitespace("")); // 0 (false)
 	console.log(isQuote('"')); // 1 (true)
 	console.log(isQuote("Z")); // 0 (false)
+	console.log(getQName(""));
 
 	Bun.stdout.write(`isAttributeEndJS: ${isAttributeEndJS(">")}\n`);
 	Bun.stdout.write(`isQuoteJS: ${isQuoteJS("")}\n`);
 	Bun.stdout.write(`isWhitespaceJS: ${isWhitespaceJS("Hey")}\n`);
+	Bun.stdout.write(`isWhitespaceJS: ${getQNameJS("Hey")}\n`);
 }
 
 main();

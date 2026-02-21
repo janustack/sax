@@ -1,19 +1,9 @@
-import type { SAXOptions } from "./types.js";
+import type { SAXOptions, WasmExports } from "./types.js";
 
-export function isWhitespace(char: string): boolean {
-	return char === " " || char === "\n" || char === "\r" || char === "\t";
-}
+const encoder = new TextEncoder();
 
-export function isQuote(char: string): boolean {
-	return char === '"' || char === "'";
-}
-
-export function isAttributeEnd(char: string): boolean {
-	return char === ">" || isWhitespace(char);
-}
-
-export function isMatch(regex: RegExp, char: string): boolean {
-	return regex.test(char);
+function toBool(v: number | boolean): boolean {
+	return typeof v === "boolean" ? v : v !== 0;
 }
 
 export function applyTextOptions(options: SAXOptions, text: string): string {
@@ -22,18 +12,54 @@ export function applyTextOptions(options: SAXOptions, text: string): string {
 	return text;
 }
 
-export function getQName(name: string, isAttribute = false) {
-	const i = name.indexOf(":");
-	const qName = i < 0 ? ["", name] : name.split(":");
+export function isMatch(regex: RegExp, char: string): boolean {
+	return regex.test(char);
+}
 
-	let prefix = qName[0];
-	let localName = qName[1];
+export function isWhitespace(wasm: WasmExports, char: string): boolean {
+	return toBool(wasm.isWhitespace(char.charCodeAt(0)));
+}
 
-	// <x "xmlns"="http://foo">
-	if (isAttribute && name === "xmlns") {
-		prefix = "xmlns";
-		localName = "";
+export function isAttributeEnd(wasm: WasmExports, char: string): boolean {
+	return toBool(wasm.isAttributeEnd(char.charCodeAt(0)));
+}
+
+export function isQuote(wasm: WasmExports, char: string): boolean {
+	return toBool(wasm.isQuote(char.charCodeAt(0)));
+}
+
+export function getQName(
+	wasm: WasmExports,
+	name: string,
+	isAttribute = false,
+): { prefix: string; localName: string } {
+	const bytes = encoder.encode(name);
+
+	// Allocate and copy the qualified name string into wasm memory.
+	const ptr = wasm.alloc(bytes.length);
+
+	new Uint8Array(wasm.memory.buffer, ptr, bytes.length).set(bytes);
+
+	const splitIndex = wasm.getQName(ptr, bytes.length, isAttribute ? 1 : 0);
+
+	wasm.free(ptr, bytes.length);
+
+	if (splitIndex === -2) {
+		// Special XML rule handled by Zig:
+		// If this is an attribute and the name is exactly "xmlns",
+		// treat it as the reserved namespace declaration attribute.
+		return { prefix: "xmlns", localName: "" };
 	}
 
-	return { prefix, localName };
+	if (splitIndex === -1) {
+		// No ':' present - unprefixed qualified name.
+		// The entire string is the local name; prefix is empty.
+		return { prefix: "", localName: name };
+	}
+
+	// Prefixed qualified name
+	return {
+		prefix: name.substring(0, splitIndex),
+		localName: name.substring(splitIndex + 1),
+	};
 }

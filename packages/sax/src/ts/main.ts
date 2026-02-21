@@ -1,13 +1,11 @@
-export {
-	EVENTS,
+import {
 	HTML_NAMED_CHARACTER_ENTITIES,
-	State,
 	XML_PREDEFINED_ENTITIES,
-} from "./constants.js";
+} from "./entities.js";
 
 import { Parser } from "./parser.js";
 
-export const wasmURL: URL = new URL("./utils.wasm", import.meta.url);
+export const wasmURL: URL = new URL("./lib.wasm", import.meta.url);
 
 export type { SAXHandlers, SAXOptions } from "./types.js";
 

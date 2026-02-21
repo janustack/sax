@@ -10,18 +10,12 @@ project:
 tasks:
   bench:
     command: bun
+    local: true
 
   build:
     command: bun build.ts
-    deps:
-      - clean
     inputs:
       - src/**/*
       - build.ts
     outputs:
-      - dist/**/*
-
-  clean:
-    command: rm -rf dist
-    inputs:
       - dist/**/*

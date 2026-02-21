@@ -1,13 +1,42 @@
-import { describe, expect, test } from "bun:test";
-import SAX, { type SAXOptions } from "@janustack/sax";
+import { beforeAll, describe, expect, test } from "bun:test";
+import SAX, { type SAXOptions, wasmURL } from "@janustack/sax";
 
-describe("", () => {
-	test("uppercase", () => {
-		const options: SAXOptions = { strict: false };
+describe("Casing Tests", () => {
+	let bytes: Uint8Array;
+
+	beforeAll(async () => {
+		bytes = await Bun.file(wasmURL).bytes();
+	});
+
+	async function parse(xml: string, options?: SAXOptions) {
+		const events: any[] = [];
+		const parser = new SAX.Parser(options, {
+			onOpenTagStart(tag) {
+				events.push(["openTagStart", tag]);
+			},
+			onAttribute(attr) {
+				events.push(["attribute", attr]);
+			},
+			onOpenTag(tag) {
+				events.push(["openTag", tag]);
+			},
+			onCloseTag(name) {
+				events.push(["closeTag", name]);
+			},
+		});
+		await parser.initWasm(bytes);
+		parser.write(xml);
+		parser.end();
+		return events;
+	}
+
+	test("uppercase", async () => {
+		const options: SAXOptions = { nameCasing: "uppercase" };
 		const xml = '<span class="test" hello="world"></span>';
-		expect(parse(xml, options)).toEqual([
+		const results = await parse(xml, options);
+		expect(results).toEqual([
 			[
-				"openTagstart",
+				"openTagStart",
 				{
 					name: "SPAN",
 					attributes: {},
@@ -27,10 +56,11 @@ describe("", () => {
 		]);
 	});
 
-	test("lowercase", () => {
-		const options: SAXOptions = { lowercase: true, strict: false };
+	test("lowercase", async () => {
+		const options: SAXOptions = { nameCasing: "lowercase" };
 		const xml = '<span class="test" hello="world"></span>';
-		expect(parse(xml, options)).toEqual([
+		const results = await parse(xml, options);
+		expect(results).toEqual([
 			[
 				"openTagStart",
 				{

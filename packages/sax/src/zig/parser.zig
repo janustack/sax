@@ -1,5 +1,8 @@
 const std = @import("std");
 
+pub const xml = "http://www.w3.org/XML/1998/namespace";
+pub const xmlns = "http://www.w3.org/2000/xmlns/";
+
 pub const Parser = struct {
     allocator: std.mem.Allocator,
 
@@ -74,3 +77,9 @@ const State = enum(u8) {
     text,
     text_entity,
 };
+
+pub export fn end() void {}
+
+pub export fn write(pointer: [*]const u8, length: usize) void {}
+
+pub export fn flush() void {}

@@ -30,11 +30,14 @@ export type WasmExports = {
 	isQuote(byte: number): boolean;
 	isWhitespace(byte: number): boolean;
 	getQName(ptr: number, len: number, isAttribute: number): number;
+	parseEntity(ptr: number, len: number): number;
 	memory: WebAssembly.Memory;
+	alloc(len: number): number;
+	free(ptr: number, len: number): void;
 };
 
 export interface SAXHandlers {
-	onAttribute?(attribute: any): void;
+	onAttribute?(attribute: Attribute): void;
 	onCdata?(cdata: string): void;
 	onCloseCdata?(): void;
 	onCloseNamespace?(ns: { prefix: string; uri: string }): void;
@@ -45,8 +48,8 @@ export interface SAXHandlers {
 	onError?(error: Error): void;
 	onOpenCdata?(): void;
 	onOpenNamespace?(ns: { prefix: string; uri: string }): void;
-	onOpenTag?(tag: any): void;
-	onOpenTagStart?(tag: any): void;
+	onOpenTag?(tag: unknown): void;
+	onOpenTagStart?(tag: unknown): void;
 	onProcessingInstruction?(data: { name: string; body: string }): void;
 	onReady?(): void;
 	onScript?(script: string): void;
@@ -54,12 +57,14 @@ export interface SAXHandlers {
 	onText?(text: string): void;
 }
 
+export type SAXHandlerName = keyof SAXHandlers;
+
 export interface SAXOptions {
-	lowercase?: boolean;
+	caseTransform?: "preserve" | "lowercase" | "uppercase";
 	namespaces?: boolean;
 	normalize?: boolean;
 	strict?: boolean;
-	trim?: boolean;
-	trackPosition?: boolean;
 	strictEntities?: boolean;
+	trackPosition?: boolean;
+	trim?: boolean;
 }

@@ -8,13 +8,13 @@ import SAX, {
 } from "@janustack/sax";
 
 const options: SAXOptions = {
-	lowercase: true,
-	normalize: false,
-	position: true,
+	caseTransform: "lowercase",
+	namespaces: true,
+	normalize: true,
 	strict: true,
-	trim: false,
-	xmlns: true,
-};
+	trackPosition: true,
+	trim: true,
+} as const;
 
 const handlers: SAXHandlers = {
 	onProcessingInstruction(data) {
@@ -45,15 +45,14 @@ const handlers: SAXHandlers = {
 	},
 };
 
-const parser = new SAX.Parser(options, handlers);
-
 const bytes = await readFile(wasmURL);
 
-await parser.initWasm(bytes);
-
-const path = "../assets/large.xml";
+const path = "../../assets/large.xml";
 const url = new URL(path, import.meta.url);
 const stream = createReadStream(url);
+
+const parser = new SAX.Parser(options, handlers);
+await parser.loadWasm(bytes);
 
 for await (const chunk of stream) {
 	parser.write(chunk);

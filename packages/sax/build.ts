@@ -1,4 +1,7 @@
 import { dts } from "bun-plugin-dtsx";
+import { generateEntities } from "./scripts/gen-entities.ts";
+
+const virtualEntities = await generateEntities();
 
 await Bun.$`rm -rf dist`;
 
@@ -13,13 +16,16 @@ const result = await Bun.build({
 	minify: true,
 	outdir: "dist",
 	root: "src/ts",
+	files: {
+		"./entities.js": virtualEntities,
+	},
 });
 
-await Bun.$`cp src/wasm/utils.wasm dist/`;
+await Bun.$`cp src/wasm/lib.wasm dist/`;
 
 if (result.metafile) {
-	// Analyze outputs
 	for (const [path, meta] of Object.entries(result.metafile.outputs)) {
-		console.log(`${path}: ${meta.bytes} bytes`);
+		const megabytes = meta.bytes / 1_000_000;
+		Bun.stdout.write(`${path}: ${megabytes} mb`);
 	}
 }

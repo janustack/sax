@@ -1,34 +1,38 @@
-import { describe, expect, test } from "bun:test";
-import SAX, { type SAXOptions } from "@janustack/sax";
-
-function parse(xml: string, options: SAXOptions = {}) {
-	const events: any[] = [];
-
-	const parser = new SAX.Parser(options, {
-		onCloseTag(name) {
-			events.push(["closeTag", name]);
-		},
-		onComment(comment) {
-			events.push(["comment", comment]);
-		},
-		onDoctype(doctype) {
-			events.push(["doctype", doctype]);
-		},
-		onOpenTag(tag) {
-			events.push(["openTag", tag]);
-		},
-		onOpenTagStart(tag) {
-			events.push(["openTagStart", tag]);
-		},
-	});
-
-	parser.write(xml);
-	parser.end();
-
-	return events;
-}
+import { beforeAll, describe, expect, test } from "bun:test";
+import SAX, { type SAXOptions, wasmURL } from "@janustack/sax";
 
 describe("DOCTYPE parsing", () => {
+	let bytes: Uint8Array;
+
+	beforeAll(async () => {
+		bytes = await Bun.file(wasmURL).bytes();
+	});
+
+	async function parse(xml: string, options: SAXOptions = {}) {
+		const events: any[] = [];
+		const parser = new SAX.Parser(options, {
+			onCloseTag(name) {
+				events.push(["closeTag", name]);
+			},
+			onComment(comment) {
+				events.push(["comment", comment]);
+			},
+			onDoctype(doctype) {
+				events.push(["doctype", doctype]);
+			},
+			onOpenTag(tag) {
+				events.push(["openTag", tag]);
+			},
+			onOpenTagStart(tag) {
+				events.push(["openTagStart", tag]);
+			},
+		});
+		await parser.initWasm(bytes);
+		parser.write(xml);
+		parser.end();
+		return events;
+	}
+
 	test.each([
 		{
 			name: "emits doctype with internal entity declaration",
@@ -78,7 +82,7 @@ describe("DOCTYPE parsing", () => {
 				["closeTag", "SVG"],
 			],
 		},
-	])("$name", ({ xml, expected }) => {
-		expect(parse(xml)).toEqual(expected);
+	])("$name", async ({ xml, expected }) => {
+		expect(await parse(xml)).toEqual(expected);
 	});
 });

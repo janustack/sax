@@ -1,25 +1,21 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import process from "node:process";
-import SAX from "@janustack/sax";
+import SAX, { type SAXOptions, wasmURL } from "@janustack/sax";
 
 describe("cdata", () => {
-test("cdata", () => {
-    expect.toEqual([
-        ["openTagStart", { name: "R", attributes: {} }],
-        ["openTag", { name: "R", attributes: {}, isSelfClosing: false }],
-        ["openCdata", undefined],
-        ["cdata", " this is character data  "],
-        ["closeCdata", undefined],
-        ["closeTag", "R"],
-    ]);
-            const xml `<r><![CDATA[ this is character data  ]]></r>`;
-    const parser = new SAX.parser({}, handlers);
-    parser.write(xml);
-    parser.end();
+let bytes: Uint8Array;
+
+beforeAll(async () => {
+    bytes = await Bun.file(wasmURL).bytes();
 });
 
-test("cdata chunked", () => {
-    expect.toEqual([
+    test("cdata", async () => {
+    const xml = `<r><![CDATA[ this is character data  ]]></r>`;
+      const parser = new SAX.parser();
+     	await parser.initWasm(bytes);
+    parser.write(xml);
+    parser.end();
+    expect().toEqual([
         ["openTagStart", { name: "R", attributes: {} }],
         ["openTag", { name: "R", attributes: {}, isSelfClosing: false }],
         ["openCdata", undefined],
@@ -27,15 +23,34 @@ test("cdata chunked", () => {
         ["closeCdata", undefined],
         ["closeTag", "R"],
     ]);
-    const parser = new SAX.parser({}, handlers);
+});
+
+    test("cdata chunked", async () => {
+     	const bytes = await Bun.file(wasmURL).bytes();
+        const parser = new SAX.parser();
+       	await parser.initWasm(bytes);
 	parser.write("<r><![CDATA[ this is ")
 	parser.write("character data  ")
 	parser.write("]]></r>")
-  parser.end();
+    parser.end();
+    expect().toEqual([
+        ["openTagStart", { name: "R", attributes: {} }],
+        ["openTag", { name: "R", attributes: {}, isSelfClosing: false }],
+        ["openCdata", undefined],
+        ["cdata", " this is character data  "],
+        ["closeCdata", undefined],
+        ["closeTag", "R"],
+    ]);
 });
 
-test("cdata end split", () => {
-    expect.toEqual([
+    test("cdata end split", async () => {
+        const parser = new SAX.parser();
+       	await parser.initWasm(bytes);
+        parser.write("<r><![CDATA[ this is ]")
+    parser.write("]>")
+    parser.write("</r>")
+    parser.end();
+    expect().toEqual([
         ["openTagStart", { name: "R", attributes: {} }],
         ["opentag", { name: "R", attributes: {}, isSelfClosing: false }],
         ["openCdata", undefined],
@@ -43,41 +58,37 @@ test("cdata end split", () => {
         ["closeCdata", undefined],
         ["closetag", "R"],
     ]),
-        parser.write("<r><![CDATA[ this is ]")
-    parser.write("]>")
-    parser.write("</r>")
-    parser.end();
 });
 
 describe("cdata fake end test", () => {
     test("", () => {
-        expect: [
+    const xml = "<r><![CDATA[[[[[[[[[]]]]]]]]]]></r>";
+        for (var i = 0; i < xml.length; i++) {
+            parser.write(xml.charAt(i));
+        }
+        parser.end();
+        expect().toEqual([
             ["openTagStart", { name: "R", attributes: {} }],
             ["opentag", { name: "R", attributes: {}, isSelfClosing: false }],
             ["openCdata", undefined],
             ["cdata", "[[[[[[[[]]]]]]]]"],
             ["closeCdata", undefined],
             ["closetag", "R"],
-        ],
-    const xml = "<r><![CDATA[[[[[[[[[]]]]]]]]]]></r>";
-        for (var i = 0; i < xml.length; i++) {
-            parser.write(xml.charAt(i));
-        }
-        parser.end();
+        ]);
     });
 
     test("", () => {
-        expect.toEqual([
+        const xml = "<r><![CDATA[[[[[[[[[]]]]]]]]]]></r>";
+        parser.write(xml)
+        parser.end();
+        expect().toEqual([
             ["openTagStart", { name: "R", attributes: {} }],
             ["openTag", { name: "R", attributes: {}, isSelfClosing: false }],
             ["openCdata", undefined],
             ["cdata", "[[[[[[[[]]]]]]]]"],
             ["closeCdata", undefined],
             ["closeTag", "R"],
-        ]);,
-        const xml = "<r><![CDATA[[[[[[[[[]]]]]]]]]]></r>";
-        parser.write(xml)
-        parser.end();
+        ]);
     });
 });
 
@@ -115,8 +126,18 @@ test("cdata mega", () => {
 	t.end();
 });
 
-test("cdata multiple", () => {
-    expect.toEqual([
+    test("cdata multiple", async () => {
+     	const bytes = await Bun.file(wasmURL).bytes();
+        const parser = new SAX.parser();
+       	await parser.initWasm(bytes);
+	parser.write("<r><![CDATA[ this is ]]>")
+            parser.write("<![CDA")
+            parser.write("T")
+            parser.write("A[")
+            parser.write("character data  ")
+            parser.write("]]></r>")
+    parser.end();
+    expect(events).toEqual([
         ["openTagStart", { name: "R", attributes: {} }],
         ["openTag", { name: "R", attributes: {}, isSelfClosing: false }],
         ["openCdata", undefined],
@@ -127,12 +148,5 @@ test("cdata multiple", () => {
         ["closeCdata", undefined],
         ["closeTag", "R"],
     ]);
-	parser.write("<r><![CDATA[ this is ]]>")
-            parser.write("<![CDA")
-            parser.write("T")
-            parser.write("A[")
-            parser.write("character data  ")
-            parser.write("]]></r>")
-            parser.end();
 });
 });

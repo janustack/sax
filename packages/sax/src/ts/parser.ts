@@ -1,14 +1,14 @@
 import {
 	BUFFERS,
-	CDATA_SECTION_OPEN,
-	DOCTYPE_KEYWORD,
-	HTML_NAMED_CHARACTER_ENTITIES,
 	MAX_BUFFER_LENGTH,
 	NAMESPACES,
 	REGEX,
 	State,
-	XML_PREDEFINED_ENTITIES,
 } from "./constants.js";
+import {
+	HTML_NAMED_CHARACTER_ENTITIES,
+	XML_PREDEFINED_ENTITIES,
+} from "./entities.js";
 import { SAXParserError } from "./error.js";
 import type {
 	Attribute,
@@ -25,16 +25,11 @@ import {
 	isQuote,
 	isWhitespace,
 } from "./utils.js";
-import {
-	//getQName,
-	//isAttributeEnd,
-	//isQuote,
-	// isWhitespace,
-	setWasmExports,
-} from "./wasm.js";
 
 export class Parser {
 	public static decoder: TextDecoder = new TextDecoder();
+	public static encoder: TextEncoder = new TextEncoder();
+
 	public error: SAXParserError | null = null;
 	public handlers: Partial<SAXHandlers>;
 	public options: SAXOptions;
@@ -48,7 +43,7 @@ export class Parser {
 
 	private attributeList: [string, string][] = [];
 	private bufferCheckPosition = MAX_BUFFER_LENGTH;
-	private caseTransform: "toLowerCase" | "toUpperCase";
+	private applyCaseTransform: (name: string) => string = (name) => name;
 	private ENTITIES: Record<string, string>;
 	private hasDoctype = false;
 	private hasSeenRoot = false;
@@ -56,7 +51,7 @@ export class Parser {
 	private isRootClosed = false;
 	private ns: Record<string, string>;
 	private state = State.BEGIN;
-	private wasm: WasmExports | undefined;
+	private wasm: WasmExports;
 
 	// Buffer strings
 	private attributeName = "";
@@ -81,31 +76,31 @@ export class Parser {
 		this.handlers = handlers;
 
 		this.options = {
-			lowercase: false,
+			caseTransform: "preserve",
 			namespaces: false,
 			normalize: false,
 			strict: false,
+			strictEntities: false,
 			trackPosition: false,
 			trim: false,
 			...options,
 		};
 
-		if (this.options.lowercase) {
-			this.caseTransform = "toLowerCase";
-		} else {
-			this.caseTransform = "toUpperCase";
+		if (this.options.caseTransform === "lowercase") {
+			this.applyCaseTransform = (string) => string.toLowerCase();
+		} else if (this.options.caseTransform === "uppercase") {
+			this.applyCaseTransform = (string) => string.toUpperCase();
 		}
 
-		if (this.options.strictEntities) {
-			this.ENTITIES = Object.create(XML_PREDEFINED_ENTITIES);
+		if (this.options.strictEntities === true) {
+			this.ENTITIES = XML_PREDEFINED_ENTITIES;
 		} else {
-			this.ENTITIES = Object.create(HTML_NAMED_CHARACTER_ENTITIES);
+			this.ENTITIES = HTML_NAMED_CHARACTER_ENTITIES;
 		}
 
-		if (this.options.namespaces) {
+		if (this.options.namespaces === true) {
 			this.ns = Object.create(NAMESPACES);
 		}
-
 		// disallow unquoted attribute values if not otherwise configured  and strict mode is true
 		if (this.options.unquotedAttributeValues === undefined) {
 			this.options.unquotedAttributeValues = !this.options.strict;
@@ -114,32 +109,29 @@ export class Parser {
 		this.emit("onReady");
 	}
 
-	public async initWasm(
+	public async loadWasm(
 		source: Response | Uint8Array | WebAssembly.Module,
 	): Promise<boolean> {
-		const env = {};
-
 		let instance: WebAssembly.Instance;
+		const imports = { env: {} };
 
 		try {
 			if (source instanceof Uint8Array) {
 				const result = await WebAssembly.instantiate(
 					source.buffer as ArrayBuffer,
-					{
-						env,
-					},
+					imports,
 				);
 				instance = result?.instance;
 			} else if (source instanceof WebAssembly.Module) {
-				instance = await WebAssembly.instantiate(source, { env });
+				instance = await WebAssembly.instantiate(source, imports);
 			} else {
-				const result = await WebAssembly.instantiateStreaming(source, { env });
-				instance = result?.instance;
+				const result = await WebAssembly.instantiateStreaming(source, imports);
+				instance = result.instance;
 			}
 
 			const exports = instance.exports as unknown as WasmExports;
 			this.wasm = exports;
-			setWasmExports(exports);
+			return true;
 		} catch (error) {
 			throw new Error(`Failed to instantiate Wasm: ${error}`);
 		}
@@ -177,13 +169,22 @@ export class Parser {
 		}
 	}
 
+	public async parse(input: ReadableStream<Uint8Array>): Promise<void> {}
+
 	public write(chunk: Uint8Array | string): void {
 		if (this.error) {
 			throw this.error;
 		}
 
+		if (!this.wasm) {
+			this.fail(
+				"Wasm not initialized. Make sure to await parser.initWasm() before writing.",
+			);
+			return;
+		}
+
 		if (this.isEnded) {
-			this.fail("Cannot write after close. Assign an onready handler.");
+			this.fail("Cannot write after close. Assign an onReady handler.");
 			return;
 		}
 
@@ -261,7 +262,10 @@ export class Parser {
 						continue;
 					}
 
-					if (!isWhitespace(char) && (!this.hasSeenRoot || this.isRootClosed)) {
+					if (
+						!isWhitespace(this.wasm, char) &&
+						(!this.hasSeenRoot || this.isRootClosed)
+					) {
 						this.fail("Text data outside of root node.");
 					}
 
@@ -282,7 +286,7 @@ export class Parser {
 						continue;
 					}
 
-					if (isWhitespace(char)) {
+					if (isWhitespace(this.wasm, char)) {
 						continue;
 					}
 
@@ -337,9 +341,7 @@ export class Parser {
 						continue;
 					}
 
-					if (
-						(this.sgmlDeclaration + char).toUpperCase() === CDATA_SECTION_OPEN
-					) {
+					if ((this.sgmlDeclaration + char).toUpperCase() === "[CDATA[") {
 						this.emitNode("onOpenCdata");
 						this.state = State.CDATA;
 						this.sgmlDeclaration = "";
@@ -347,7 +349,7 @@ export class Parser {
 						continue;
 					}
 
-					if ((this.sgmlDeclaration + char).toUpperCase() === DOCTYPE_KEYWORD) {
+					if ((this.sgmlDeclaration + char).toUpperCase() === "DOCTYPE") {
 						this.state = State.DOCTYPE;
 
 						if (this.doctype || this.hasSeenRoot) {
@@ -366,7 +368,7 @@ export class Parser {
 						continue;
 					}
 
-					if (isQuote(char)) {
+					if (isQuote(this.wasm, char)) {
 						this.state = State.SGML_DECLARATION_QUOTED;
 						this.sgmlDeclaration += char;
 						continue;
@@ -400,7 +402,7 @@ export class Parser {
 						continue;
 					}
 
-					if (isQuote(char)) {
+					if (isQuote(this.wasm, char)) {
 						this.state = State.DOCTYPE_QUOTED;
 						this.quoteChar = char;
 						continue;
@@ -431,7 +433,7 @@ export class Parser {
 						continue;
 					}
 
-					if (isQuote(char)) {
+					if (isQuote(this.wasm, char)) {
 						this.doctype += char;
 						this.state = State.DOCTYPE_DTD_QUOTED;
 						this.quoteChar = char;
@@ -566,7 +568,7 @@ export class Parser {
 						continue;
 					}
 
-					if (isWhitespace(char)) {
+					if (isWhitespace(this.wasm, char)) {
 						this.state = State.PROCESSING_INSTRUCTION_BODY;
 						continue;
 					}
@@ -576,7 +578,7 @@ export class Parser {
 				}
 
 				case State.PROCESSING_INSTRUCTION_BODY: {
-					if (!this.piBody && isWhitespace(char)) {
+					if (!this.piBody && isWhitespace(this.wasm, char)) {
 						continue;
 					}
 
@@ -625,7 +627,7 @@ export class Parser {
 						break;
 					}
 
-					if (!isWhitespace(char)) {
+					if (!isWhitespace(this.wasm, char)) {
 						this.fail("Invalid character in tag name");
 					}
 
@@ -647,7 +649,7 @@ export class Parser {
 				}
 
 				case State.ATTRIBUTE: {
-					if (isWhitespace(char)) {
+					if (isWhitespace(this.wasm, char)) {
 						continue;
 					}
 
@@ -686,7 +688,7 @@ export class Parser {
 						continue;
 					}
 
-					if (isWhitespace(char)) {
+					if (isWhitespace(this.wasm, char)) {
 						this.state = State.ATTRIBUTE_NAME_SAW_WHITE;
 						continue;
 					}
@@ -706,7 +708,7 @@ export class Parser {
 						continue;
 					}
 
-					if (isWhitespace(char)) {
+					if (isWhitespace(this.wasm, char)) {
 						continue;
 					}
 
@@ -739,11 +741,11 @@ export class Parser {
 				}
 
 				case State.ATTRIBUTE_VALUE: {
-					if (isWhitespace(char)) {
+					if (isWhitespace(this.wasm, char)) {
 						continue;
 					}
 
-					if (isQuote(char)) {
+					if (isQuote(this.wasm, char)) {
 						this.quoteChar = char;
 						this.state = State.ATTRIBUTE_VALUE_QUOTED;
 						continue;
@@ -776,7 +778,7 @@ export class Parser {
 				}
 
 				case State.ATTRIBUTE_VALUE_CLOSED: {
-					if (isWhitespace(char)) {
+					if (isWhitespace(this.wasm, char)) {
 						this.state = State.ATTRIBUTE;
 						continue;
 					}
@@ -804,7 +806,7 @@ export class Parser {
 				}
 
 				case State.ATTRIBUTE_VALUE_UNQUOTED: {
-					if (!isAttributeEnd(char)) {
+					if (!isAttributeEnd(this.wasm, char)) {
 						if (char === "&") {
 							this.state = State.ATTRIBUTE_VALUE_ENTITY_UNQUOTED;
 							continue;
@@ -827,7 +829,7 @@ export class Parser {
 
 				case State.CLOSE_TAG: {
 					if (!this.tagName) {
-						if (isWhitespace(char)) {
+						if (isWhitespace(this.wasm, char)) {
 							continue;
 						}
 
@@ -850,7 +852,7 @@ export class Parser {
 						continue;
 					}
 
-					if (!isWhitespace(char)) {
+					if (!isWhitespace(this.wasm, char)) {
 						this.fail("Invalid tagname in closing tag");
 						continue;
 					}
@@ -860,7 +862,7 @@ export class Parser {
 				}
 
 				case State.CLOSE_TAG_SAW_WHITE: {
-					if (isWhitespace(char)) {
+					if (isWhitespace(this.wasm, char)) {
 						continue;
 					}
 
@@ -944,11 +946,11 @@ export class Parser {
 
 	private processAttribute(): void {
 		if (!this.options.strict) {
-			this.attributeName = this.attributeName[this.caseTransform]();
+			this.attributeName = this.applyCaseTransform(this.attributeName);
 		}
 
 		if (
-			this.attributeList.indexOf(this.attributeName) !== -1 ||
+			this.attributeList.some(([name]) => name === this.attributeName) ||
 			Object.hasOwn(this.tag.attributes, this.attributeName)
 		) {
 			this.attributeName = "";
@@ -957,11 +959,15 @@ export class Parser {
 		}
 
 		if (this.options.namespaces) {
-			const { localName, prefix } = getQName(this.attributeName, true);
+			const { localName, prefix } = getQName(
+				this.wasm,
+				this.attributeName,
+				true,
+			);
 
 			if (prefix === "xmlns") {
 				// namespace binding attribute. push the binding into scope
-				if (localName === "xml" && this.attributeValue !== NAMESPACES.xml) {
+				if (localName === "xml" && this.attributeValue !== NAMESPACES.xmlns) {
 					this.fail(
 						`xml: prefix must be bound to ${NAMESPACES.xml}\nActual: ${this.attributeValue}`,
 					);
@@ -989,7 +995,6 @@ export class Parser {
 			// so deferred events can be emitted in document order
 			this.attributeList.push([this.attributeName, this.attributeValue]);
 		} else {
-			// in non-xmlns mode, we can emit the event right away
 			this.tag.attributes[this.attributeName] = this.attributeValue;
 			this.emitNode("onAttribute", {
 				name: this.attributeName,
@@ -1008,9 +1013,7 @@ export class Parser {
 			return;
 		}
 
-		if (!isWhitespace(char)) {
-			// have to process this as a text node.
-			// weird, but happens.
+		if (!isWhitespace(this.wasm, char)) {
 			this.fail("Non-whitespace before first tag.");
 			this.textNode = char;
 			this.state = State.TEXT;
@@ -1067,7 +1070,7 @@ export class Parser {
 		let tagName = this.tagName;
 
 		if (!this.options.strict) {
-			tagName = tagName[this.caseTransform]();
+			this.tagName = this.applyCaseTransform(this.tagName);
 		}
 
 		const closeTo = tagName;
@@ -1082,7 +1085,6 @@ export class Parser {
 			this.fail("Unexpected close tag");
 		}
 
-		// didn't find it.  we already failed for strict, so just abort.
 		if (t < 0) {
 			this.fail(`Unmatched closing tag: ${this.tagName}`);
 			this.textNode += `</${this.tagName}>`;
@@ -1091,9 +1093,7 @@ export class Parser {
 		}
 
 		this.tagName = tagName;
-
 		let s = this.tags.length;
-
 		while (s-- > t) {
 			this.tag = this.tags.pop();
 			const tag = this.tag;
@@ -1130,18 +1130,24 @@ export class Parser {
 		this.textNode = "";
 	}
 
-	private emit<T extends keyof SAXHandlers>(event: T, data?: any): void {
+	private emit<T extends keyof SAXHandlers>(
+		event: T,
+		...args: Parameters<NonNullable<SAXHandlers[T]>>
+	): void {
 		const handler = this.handlers[event];
 		if (typeof handler === "function") {
-			handler(data);
+			(handler as Function)(...args);
 		}
 	}
 
-	private emitNode<T extends keyof SAXHandlers>(nodeType: T, data?: any): void {
+	private emitNode<T extends keyof SAXHandlers>(
+		nodeType: T,
+		...args: Parameters<NonNullable<SAXHandlers[T]>>
+	): void {
 		if (this.textNode) {
 			this.closeText();
 		}
-		this.emit(nodeType, data);
+		this.emit(nodeType, ...args);
 	}
 
 	private fail(message: string): this {
@@ -1154,7 +1160,7 @@ export class Parser {
 
 	private newTag(): void {
 		if (!this.options.strict) {
-			this.tagName = this.tagName[this.caseTransform]();
+			this.tagName = this.applyCaseTransform(this.tagName);
 		}
 
 		const parent = this.tags.at(-1) || this;
@@ -1181,7 +1187,7 @@ export class Parser {
 	private openTag(selfClosing?: boolean): void {
 		if (this.options.namespaces) {
 			const tag = this.tag;
-			const qName = getQName(this.tagName);
+			const qName = getQName(this.wasm, this.tagName);
 
 			tag.prefix = qName.prefix;
 			tag.localName = qName.localName;
@@ -1207,7 +1213,7 @@ export class Parser {
 			// Note: do not apply default ns to attributes:
 			// http://www.w3.org/TR/REC-xml-names/#defaulting
 			for (const [name, value] of this.attributeList) {
-				const qName = getQName(name, true);
+				const qName = getQName(this.wasm, name, true);
 				const prefix = qName.prefix;
 				const localName = qName.localName;
 
@@ -1259,40 +1265,73 @@ export class Parser {
 	}
 
 	private parseEntity(): string {
-		const raw = this.entity;
-		const lc = raw.toLowerCase();
+		const rawEntity = this.entity;
 
-		const named = this.ENTITIES[raw] ?? this.ENTITIES[lc];
+		// Named entities only
+		const named =
+			this.ENTITIES[rawEntity] ?? this.ENTITIES[rawEntity.toLowerCase()];
 		if (named !== undefined) return named;
 
-		let entity = lc;
-		let number = NaN;
-		let numberString = "";
+		// Numeric entities only
+		if (rawEntity.startsWith("#")) {
+			const bytes = Parser.encoder.encode(rawEntity);
 
-		if (entity.startsWith("#")) {
-			if (entity.startsWith("#x")) {
-				entity = entity.slice(2);
-				number = Number.parseInt(entity, 16);
-				numberString = number.toString(16);
-			} else {
-				entity = entity.slice(1);
-				number = Number.parseInt(entity, 10);
-				numberString = number.toString(10);
+			const ptr = this.wasm.alloc(bytes.length);
+
+			new Uint8Array(this.wasm.memory.buffer, ptr, bytes.length).set(bytes);
+
+			const codePoint = this.wasm.parseEntity(ptr, bytes.length);
+
+			this.wasm.free(ptr, bytes.length);
+
+			// Check Sentinel (0xFFFFFFFF = 4294967295)
+			if (codePoint !== 4294967295) {
+				return String.fromCodePoint(codePoint);
 			}
 		}
 
-		entity = entity.replace(/^0+/, "");
+		this.fail("Invalid character entity");
+		return `&${rawEntity};`;
+	}
 
-		if (
-			Number.isNaN(number) ||
-			numberString.toLowerCase() !== entity ||
-			number < 0 ||
-			number > 0x10ffff
-		) {
-			this.fail("Invalid character entity");
-			return `&${this.entity};`;
+	public reset(): void {
+		this.error = null;
+		this.tag = null;
+		this.tags.length = 0;
+		this.attributeList.length = 0;
+
+		this.bufferCheckPosition = MAX_BUFFER_LENGTH;
+		this.column = 0;
+		this.line = 0;
+		this.position = 0;
+		this.startTagPosition = 0;
+
+		this.hasDoctype = false;
+		this.hasSeenRoot = false;
+		this.isEnded = false;
+		this.isRootClosed = false;
+		this.state = State.BEGIN;
+
+		// Reset namespaces if enabled
+		if (this.options.namespaces) {
+			this.ns = Object.create(NAMESPACES);
 		}
 
-		return String.fromCodePoint(number);
+		// Clear all string buffers
+		this.attributeName = "";
+		this.attributeValue = "";
+		this.cdata = "";
+		this.char = "";
+		this.comment = "";
+		this.doctype = "";
+		this.entity = "";
+		this.piBody = "";
+		this.piName = "";
+		this.quoteChar = "";
+		this.sgmlDeclaration = "";
+		this.tagName = "";
+		this.textNode = "";
+
+		this.emit("onReady");
 	}
 }

@@ -1,63 +1,56 @@
-import SAX from "sax";
+import SAX, {
+	type SAXHandlers,
+	type SAXOptions,
+	wasmURL,
+} from "@janustack/sax";
+import { readFile } from "node:fs/promises";
 
-const options = {
-	lowercase: true,
-	normalize: false,
-	position: true,
+const options: SAXOptions = {
+	caseTransform: "lowercase",
+	namespaces: true,
+	normalize: true,
 	strict: true,
-	trim: false,
-	xmlns: true,
+	trackPosition: true,
+	trim: true,
 } as const;
 
-const parser = SAX.parser(options.strict, options);
-
-parser.onprocessinginstruction = (data) => {
-	console.log("Processing Instruction:", data);
+const handlers: SAXHandlers = {
+	onProcessingInstruction(data) {
+		console.log("Processing Instruction:", data);
+	},
+	onComment(comment) {
+		console.log("Comment:", comment);
+	},
+	onCdata(cdata) {
+		console.log("C Data:", cdata);
+	},
+	onOpenTag(tag) {
+		console.log("Open:", tag.name, tag);
+	},
+	onAttribute(attribute) {
+		console.log("Attribute:", attribute);
+	},
+	onText(text) {
+		if (text.trim()) {
+			console.log("Text:", text);
+		}
+	},
+	onCloseTag(name) {
+		console.log("Close:", name);
+	},
+	onError(error) {
+		console.error("Error:", error);
+	},
 };
 
-parser.oncomment = (comment) => {
-	console.log("COMMENT:", comment);
-};
+const bytes = await readFile(wasmURL);
 
-parser.oncdata = (cdata) => {
-	console.log("CDATA:", cdata);
-};
-
-parser.onopentag = (tag) => {
-	console.log("OPEN:", tag.name, tag);
-};
-
-parser.onattribute = (attribute) => {
-	console.log("Attribute:", attribute);
-};
-
-parser.ontext = (text) => {
-	if (text.trim()) {
-		console.log("TEXT:", text);
-	}
-};
-
-parser.onclosetag = (name) => {
-	console.log("CLOSE:", name);
-};
-
-parser.onerror = (error) => {
-	console.error("ERROR:", error);
-};
-
-const path = "../assets/small.xml";
+const path = "../../assets/icon.svg";
 const url = new URL(path, import.meta.url);
-const text = await Bun.file(url).text();
+const xml = await Bun.file(url).text();
 
-const startTime = Bun.nanoseconds();
+const parser = new SAX.Parser(options, handlers);
+await parser.loadWasm(bytes);
 
-parser.write(text);
+parser.write(xml);
 parser.end();
-
-const endTime = Bun.nanoseconds();
-
-const duration = (endTime - startTime) / 1_000_000;
-
-Bun.stdout.write(
-	`\n---SAX Benchmark Report---\nTime: ${duration.toFixed(2)} ms\n`,
-);
