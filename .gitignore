@@ -4,3 +4,4 @@
 dist/
 node_modules/
 sax-wasm/
+parser.rs
