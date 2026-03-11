@@ -3,3 +3,4 @@
 .zig-out/
 dist/
 node_modules/
+sax-wasm/

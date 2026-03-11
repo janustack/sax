@@ -1,7 +1,0 @@
-{
-	"name": "@janustack/svg-components",
-	"exports": {
-		".": "./src/main.ts"
-	},
-	"version": "0.1.0"
-}

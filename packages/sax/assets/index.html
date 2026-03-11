@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Example HTML</title>
+  </head>
+
+  <body>
+    <header class=header>
+      <h1>Hello, world!</h1>
+
+      <!-- boolean attribute + unquoted attribute value -->
+      <button type="button" disabled>Click me</button>
+
+      <!-- data attribute -->
+      <div data-id=123 data-role="admin">Meta container</div>
+    </header>
+
+    <main>
+      <ul>
+        <li><a href="https://example.com" target=_blank>Example link</a></li>
+        <li><a href=/docs>Docs (unquoted URL)</a></li>
+      </ul>
+
+      <!-- void element (HTML allows this without />) -->
+      <img src="/logo.png" alt="Logo">
+
+      <!-- comment -->
+      <!-- This is a comment -->
+    </main>
+
+    <script type=text/javascript>
+      // Raw text area: HTML parsers treat this specially.
+      console.log("Hello from <script>!");
+    </script>
+  </body>
+</html>
